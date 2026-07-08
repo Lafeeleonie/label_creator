@@ -370,8 +370,13 @@ def _symbol_bank() -> None:
     tabs = st.tabs(list(SYMBOL_BANK_GROUPS.keys()))
     for tab, (group_name, symbols) in zip(tabs, SYMBOL_BANK_GROUPS.items()):
         with tab:
-            column_count = 4 if group_name == "Vis" else 3
-            _symbol_button_grid(symbols, column_count)
+            _symbol_button_grid(symbols, _symbol_column_count(group_name))
+
+
+def _symbol_column_count(group_name: str) -> int:
+    if group_name in {"Connecteurs", "Grandes etiquettes", "Vis"}:
+        return 4
+    return 3
 
 
 def _symbol_button_grid(symbols: list[str], column_count: int) -> None:
