@@ -10,8 +10,11 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
 
+CUSTOM_LABEL_SYMBOL = "custom_label"
+
 SYMBOL_LABELS = {
     "none": "Aucun",
+    CUSTOM_LABEL_SYMBOL: "Custom label",
     "resistor": "Resistance",
     "capacitor": "Condensateur",
     "electrolytic": "Condensateur polarise",
@@ -280,14 +283,18 @@ def _draw_label(
 
     height_mm = height / mm
     padding = _label_padding(width, height)
-    has_symbol = item.symbol != "none"
-    has_text = bool(item.text or item.value or item.note)
+    is_custom_label = item.symbol == CUSTOM_LABEL_SYMBOL
+    custom_symbol_text = item.value.strip() if is_custom_label else ""
+    visible_value = "" if is_custom_label else item.value
+    has_symbol = item.symbol != "none" and (not is_custom_label or bool(custom_symbol_text))
+    has_text = bool(item.text or visible_value or item.note)
     is_text_symbol = item.symbol in TEXT_SYMBOLS
+    is_wide_symbol = is_text_symbol or is_custom_label
 
     if has_symbol and not has_text:
         symbol_width = max(1, width - 2 * padding)
         symbol_height = max(1, height - 2 * padding)
-        if not is_text_symbol:
+        if not is_wide_symbol:
             symbol_size = max(1, min(symbol_width, symbol_height))
             symbol_width = symbol_size
             symbol_height = symbol_size
@@ -298,6 +305,7 @@ def _draw_label(
             y + (height - symbol_height) / 2,
             symbol_width,
             symbol_height,
+            custom_symbol_text=custom_symbol_text,
         )
         pdf.restoreState()
         return
@@ -312,8 +320,8 @@ def _draw_label(
     lines: list[tuple[str, str, float]] = []
     if item.text:
         lines.append(("Helvetica-Bold", item.text, title_size))
-    if item.value:
-        lines.append(("Helvetica", item.value, value_size))
+    if visible_value:
+        lines.append(("Helvetica", visible_value, value_size))
     if item.note:
         max_note_lines = 1 if height_mm < 12 else 2
         for note_line in _wrap_text(item.note, "Helvetica", note_size, text_width, max_note_lines):
@@ -328,7 +336,7 @@ def _draw_label(
         gap = min(0.7 * mm, available_height * 0.07)
         symbol_width = max(1, text_width)
         symbol_height = max(1, min(available_height * 0.48, 9.0 * mm))
-        if not is_text_symbol:
+        if not is_wide_symbol:
             symbol_height = max(1, min(text_width, available_height * 0.42, 6.2 * mm))
             symbol_width = symbol_height
 
@@ -346,6 +354,7 @@ def _draw_label(
             block_top - symbol_height,
             symbol_width,
             symbol_height,
+            custom_symbol_text=custom_symbol_text,
         )
         _draw_text_lines(
             pdf,
@@ -455,7 +464,19 @@ def _draw_cut_marks(pdf: canvas.Canvas, x: float, y: float, width: float, height
     pdf.restoreState()
 
 
-def _draw_symbol(pdf: canvas.Canvas, symbol: str, x: float, y: float, width: float, height: float) -> None:
+def _draw_symbol(
+    pdf: canvas.Canvas,
+    symbol: str,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    custom_symbol_text: str = "",
+) -> None:
+    if symbol == CUSTOM_LABEL_SYMBOL:
+        _draw_text_symbol(pdf, custom_symbol_text.strip(), x, y, width, height)
+        return
+
     if symbol in TEXT_SYMBOLS:
         _draw_text_symbol(pdf, TEXT_SYMBOLS[symbol], x, y, width, height)
         return

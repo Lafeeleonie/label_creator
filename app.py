@@ -37,7 +37,7 @@ from label_domain import (
     save_autosave_draft,
     save_named_page,
 )
-from label_pdf import LabelSheetSettings, SYMBOL_LABELS, build_label_pdf, validate_layout
+from label_pdf import CUSTOM_LABEL_SYMBOL, LabelSheetSettings, SYMBOL_LABELS, build_label_pdf, validate_layout
 
 
 APP_DEFAULTS = load_app_defaults()
@@ -375,6 +375,7 @@ def _symbol_bank() -> None:
     for tab, (group_name, symbols) in zip(tabs, SYMBOL_BANK_GROUPS.items()):
         with tab:
             _symbol_button_grid(group_name, symbols, _symbol_column_count(group_name))
+    _custom_label_form()
 
 
 def _symbol_column_count(group_name: str) -> int:
@@ -407,6 +408,60 @@ def _append_symbol_row(symbol: str) -> None:
     )
     st.session_state.labels_df = rows_to_dataframe(rows)
     _reset_editor_widget()
+
+
+def _custom_label_form() -> None:
+    with st.form("custom_label_form", clear_on_submit=True, border=True):
+        st.subheader("Custom label")
+        quantity_col, symbol_col, label_col = st.columns([0.55, 1.35, 1.35], vertical_alignment="bottom")
+        with quantity_col:
+            quantity = st.number_input(
+                "Qte",
+                min_value=1,
+                max_value=500,
+                value=1,
+                step=1,
+                key="custom_label_quantity",
+            )
+        with symbol_col:
+            symbol_text = st.text_input(
+                "Texte symbole",
+                key="custom_label_symbol_text",
+                placeholder="ex : 5V",
+            )
+        with label_col:
+            label_text = st.text_input(
+                "Texte label",
+                key="custom_label_text",
+                placeholder="ex : Alim",
+            )
+
+        if st.form_submit_button("Ajouter", icon=":material/add:", width="stretch"):
+            _append_custom_label_row(int(quantity), symbol_text, label_text)
+
+
+def _append_custom_label_row(quantity: int, symbol_text: str, label_text: str) -> None:
+    clean_symbol_text = symbol_text.strip()
+    clean_label_text = label_text.strip()
+    if not clean_symbol_text and not clean_label_text:
+        st.warning("Renseigne au moins un texte pour le custom label.")
+        return
+
+    current_df = _current_editor_dataframe()
+    rows = dataframe_to_rows(current_df)
+    rows.append(
+        {
+            "Qte": max(1, int(quantity)),
+            "Symbole": SYMBOL_LABELS[CUSTOM_LABEL_SYMBOL],
+            "Texte": clean_label_text,
+            "Valeur": clean_symbol_text,
+            "Note": "",
+        }
+    )
+    st.session_state.labels_df = rows_to_dataframe(rows)
+    _save_current_draft(rows)
+    _reset_editor_widget()
+    st.rerun()
 
 
 def _ensure_editor_state(defaults: AppDefaults, draft: AutosaveDraft) -> None:
