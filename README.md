@@ -6,6 +6,8 @@ Par defaut, le format est regle sur des etiquettes de `12,5 x 10 mm`, organisees
 
 L'interface utilise un theme sombre par defaut.
 
+La quantite par defaut d'une ligne d'etiquette est `1`.
+
 ## Lancement
 
 Double-cliquer sur `lancer_streamlit.bat`.

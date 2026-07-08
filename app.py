@@ -65,14 +65,24 @@ def main() -> None:
     with editor_col:
         _symbol_bank()
         st.subheader("Etiquettes")
+        editor_key = _editor_key()
         edited = st.data_editor(
             st.session_state.labels_df,
-            key="labels_editor",
+            key=editor_key,
+            on_change=_commit_editor_changes,
+            args=(editor_key,),
             hide_index=True,
             num_rows="dynamic",
             width="stretch",
             column_config={
-                "Qte": st.column_config.NumberColumn("Qte", min_value=0, max_value=500, step=1, width="small"),
+                "Qte": st.column_config.NumberColumn(
+                    "Qte",
+                    min_value=0,
+                    max_value=500,
+                    step=1,
+                    default=1,
+                    width="small",
+                ),
                 "Symbole": st.column_config.SelectboxColumn(
                     "Symbole",
                     options=list(_label_to_symbol().keys()),
@@ -202,17 +212,32 @@ def _append_symbol_row(symbol: str) -> None:
         }
     )
     st.session_state.labels_df = _rows_to_dataframe(rows)
-    st.session_state.pop("labels_editor", None)
+    _reset_editor_widget()
 
 
 def _ensure_editor_state() -> None:
     if "labels_df" not in st.session_state:
         st.session_state.labels_df = _rows_to_dataframe(DEFAULT_ROWS)
+    if "editor_version" not in st.session_state:
+        st.session_state.editor_version = 0
 
 
-def _current_editor_dataframe() -> pd.DataFrame:
+def _editor_key() -> str:
+    return f"labels_editor_{st.session_state.editor_version}"
+
+
+def _reset_editor_widget() -> None:
+    st.session_state.editor_version += 1
+
+
+def _commit_editor_changes(editor_key: str) -> None:
+    st.session_state.labels_df = _current_editor_dataframe(editor_key)
+    _reset_editor_widget()
+
+
+def _current_editor_dataframe(editor_key: str | None = None) -> pd.DataFrame:
     base_df = st.session_state.labels_df.copy()
-    editor_state = st.session_state.get("labels_editor")
+    editor_state = st.session_state.get(editor_key or _editor_key())
     if not isinstance(editor_state, dict):
         return _normalize_editor_dataframe(base_df)
 
