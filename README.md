@@ -14,6 +14,8 @@ La quantite par defaut d'une ligne d'etiquette est `1`.
 
 Les lignes et les reglages courants sont sauvegardes automatiquement dans `.tmp/autosave.json`, un fichier local ignore par git.
 
+Les pages peuvent aussi etre sauvegardees avec un titre, puis rechargees depuis l'interface. Ces sauvegardes locales sont stockees dans `.tmp/saved_pages.json`.
+
 ### Lancement
 
 Double-cliquer sur `lancer_streamlit.bat`.
@@ -49,6 +51,8 @@ The interface uses a dark theme by default.
 The default quantity for a label row is `1`.
 
 Current rows and layout settings are automatically saved to `.tmp/autosave.json`, a local file ignored by git.
+
+Pages can also be saved with a title and loaded again from the interface. These local saved pages are stored in `.tmp/saved_pages.json`.
 
 ### Launch
 

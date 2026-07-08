@@ -4,6 +4,7 @@ import json
 import math
 import tomllib
 from dataclasses import dataclass, fields
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ from label_pdf import LabelItem, LabelSheetSettings, SYMBOL_LABELS
 CONFIG_PATH = Path(__file__).with_name("config.toml")
 AUTOSAVE_PATH = Path(__file__).with_name(".tmp") / "autosave.json"
 AUTOSAVE_VERSION = 1
+SAVED_PAGES_PATH = Path(__file__).with_name(".tmp") / "saved_pages.json"
+SAVED_PAGES_VERSION = 1
 
 PAGE_FORMATS_MM = {
     "A4": (210.0, 297.0),
@@ -277,12 +280,62 @@ def save_autosave_draft(
         "settings": dict(settings),
     }
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = path.with_suffix(".tmp")
-        temporary_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        temporary_path.replace(path)
+        _write_json_payload(payload, path)
     except OSError:
         return
+
+
+def list_saved_pages(path: Path = SAVED_PAGES_PATH) -> list[str]:
+    return sorted(_saved_page_entries(path).keys(), key=str.casefold)
+
+
+def save_named_page(
+    title: str,
+    rows: list[dict[str, object]],
+    settings: dict[str, object],
+    path: Path = SAVED_PAGES_PATH,
+) -> str:
+    clean_title = _clean_page_title(title)
+    if not clean_title:
+        raise ValueError("Le titre de sauvegarde est obligatoire.")
+
+    entries = _saved_page_entries(path)
+    entries[clean_title] = {
+        "title": clean_title,
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+        "rows": [normalize_row(row) for row in rows],
+        "settings": dict(settings),
+    }
+    payload = {
+        "version": SAVED_PAGES_VERSION,
+        "pages": {
+            title: entries[title]
+            for title in sorted(entries, key=str.casefold)
+        },
+    }
+    _write_json_payload(payload, path)
+    return clean_title
+
+
+def load_named_page(
+    title: str,
+    defaults: AppDefaults,
+    path: Path = SAVED_PAGES_PATH,
+) -> AutosaveDraft | None:
+    page = _saved_page_entries(path).get(_clean_page_title(title))
+    if not isinstance(page, dict):
+        return None
+
+    rows = page.get("rows")
+    settings = page.get("settings")
+    return AutosaveDraft(
+        rows=(
+            [normalize_row(row) for row in rows if isinstance(row, dict)]
+            if isinstance(rows, list)
+            else defaults.default_rows
+        ),
+        settings=dict(settings) if isinstance(settings, dict) else {},
+    )
 
 
 def compute_auto_layout(
@@ -522,3 +575,38 @@ def _read_autosave(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return raw if isinstance(raw, dict) else {}
+
+
+def _read_saved_pages(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _saved_page_entries(path: Path) -> dict[str, dict[str, Any]]:
+    raw = _read_saved_pages(path)
+    pages = raw.get("pages") if isinstance(raw, dict) else None
+    if not isinstance(pages, dict):
+        return {}
+
+    entries: dict[str, dict[str, Any]] = {}
+    for key, value in pages.items():
+        title = _clean_page_title(key)
+        if title and isinstance(value, dict):
+            entries[title] = value
+    return entries
+
+
+def _clean_page_title(title: object) -> str:
+    return " ".join(str(title or "").strip().split())
+
+
+def _write_json_payload(payload: dict[str, Any], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(".tmp")
+    temporary_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary_path.replace(path)

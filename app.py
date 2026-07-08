@@ -26,13 +26,16 @@ from label_domain import (
     dataframe_to_rows,
     delete_rows,
     label_to_symbol,
+    list_saved_pages,
     load_app_defaults,
     load_autosave_draft,
+    load_named_page,
     normalize_editor_dataframe,
     normalize_row,
     rows_to_dataframe,
     rows_to_items,
     save_autosave_draft,
+    save_named_page,
 )
 from label_pdf import LabelSheetSettings, SYMBOL_LABELS, build_label_pdf, validate_layout
 
@@ -93,6 +96,7 @@ def main() -> None:
         )
         current_rows = dataframe_to_rows(edited)
         _save_current_draft(current_rows)
+        _page_controls(current_rows)
         _delete_rows_control(edited)
 
         items = rows_to_items(current_rows)
@@ -496,6 +500,84 @@ def _delete_rows_control(edited_data: pd.DataFrame) -> None:
         _save_current_draft(rows)
         _reset_editor_widget()
         st.rerun()
+
+
+def _page_controls(rows: list[dict[str, object]]) -> None:
+    st.subheader("Page")
+    flash_message = st.session_state.pop("page_flash", "")
+    if flash_message:
+        st.success(flash_message)
+
+    reset_col, title_col, save_col = st.columns([0.95, 1.65, 1.1], vertical_alignment="bottom")
+    with reset_col:
+        if st.button("Remise a zero", icon=":material/restart_alt:", width="stretch"):
+            _reset_page()
+    with title_col:
+        page_title = st.text_input(
+            "Titre de sauvegarde",
+            key="save_page_title",
+            placeholder="ex : Resistances 1/4 W",
+        )
+    with save_col:
+        if st.button(
+            "Sauvegarder",
+            icon=":material/save:",
+            disabled=not page_title.strip(),
+            width="stretch",
+        ):
+            _save_named_page(page_title, rows)
+
+    saved_titles = list_saved_pages()
+    load_col, load_button_col = st.columns([2, 1], vertical_alignment="bottom")
+    with load_col:
+        selected_title = st.selectbox(
+            "Pages sauvegardees",
+            [""] + saved_titles,
+            format_func=lambda title: "Choisir une page" if not title else title,
+            key="load_page_title",
+        )
+    with load_button_col:
+        if st.button(
+            "Recharger",
+            icon=":material/folder_open:",
+            disabled=not selected_title,
+            width="stretch",
+        ):
+            _load_named_page(selected_title)
+
+
+def _reset_page() -> None:
+    rows: list[dict[str, object]] = []
+    st.session_state.labels_df = rows_to_dataframe(rows)
+    _save_current_draft(rows)
+    _reset_editor_widget()
+    st.session_state.page_flash = "Page remise a zero."
+    st.rerun()
+
+
+def _save_named_page(title: str, rows: list[dict[str, object]]) -> None:
+    try:
+        saved_title = save_named_page(title, rows, _current_autosave_settings())
+    except (OSError, ValueError) as error:
+        st.error(str(error))
+        return
+
+    st.session_state.page_flash = f"Page sauvegardee : {saved_title}"
+    st.rerun()
+
+
+def _load_named_page(title: str) -> None:
+    draft = load_named_page(title, APP_DEFAULTS)
+    if draft is None:
+        st.error("Page sauvegardee introuvable.")
+        return
+
+    st.session_state.labels_df = rows_to_dataframe(draft.rows)
+    st.session_state.autosave_settings = dict(draft.settings)
+    save_autosave_draft(draft.rows, draft.settings)
+    _reset_editor_widget()
+    st.session_state.page_flash = f"Page rechargee : {title}"
+    st.rerun()
 
 
 def _selected_delete_rows(data: pd.DataFrame) -> list[int]:
