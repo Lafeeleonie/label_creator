@@ -54,6 +54,18 @@ SYMBOL_BANK_GROUPS = {
         "screw_m8",
         "screw_m8_con",
     ],
+    "Grandes etiquettes": [
+        "module_arduino",
+        "module_arduino_nano",
+        "module_arduino_uno",
+        "module_esp32",
+        "module_esp8266",
+        "programmer_isp",
+        "programmer_usbasp",
+        "programmer_stlink",
+        "programmer_ch341a",
+        "programmer_ftdi",
+    ],
 }
 
 FALLBACK_DEFAULT_ROWS = [

@@ -40,12 +40,22 @@ SYMBOL_LABELS = {
     "screw_m6_con": "M6 con",
     "screw_m8": "M8",
     "screw_m8_con": "M8 con",
+    "module_arduino": "Arduino",
+    "module_arduino_nano": "Arduino Nano",
+    "module_arduino_uno": "Arduino Uno",
+    "module_esp32": "ESP32",
+    "module_esp8266": "ESP8266",
+    "programmer_isp": "Prog ISP",
+    "programmer_usbasp": "USBasp",
+    "programmer_stlink": "ST-Link",
+    "programmer_ch341a": "CH341A",
+    "programmer_ftdi": "FTDI",
 }
 
 TEXT_SYMBOLS = {
     key: label
     for key, label in SYMBOL_LABELS.items()
-    if key.startswith("screw_")
+    if key.startswith(("screw_", "module_", "programmer_"))
 }
 
 
