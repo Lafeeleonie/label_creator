@@ -228,23 +228,29 @@ def _draw_label(
     padding = _label_padding(width, height)
     has_symbol = item.symbol != "none"
     has_text = bool(item.text or item.value or item.note)
+    is_text_symbol = item.symbol in TEXT_SYMBOLS
 
     if has_symbol and not has_text:
-        symbol_size = max(1, min(width - 2 * padding, height - 2 * padding))
+        symbol_width = max(1, width - 2 * padding)
+        symbol_height = max(1, height - 2 * padding)
+        if not is_text_symbol:
+            symbol_size = max(1, min(symbol_width, symbol_height))
+            symbol_width = symbol_size
+            symbol_height = symbol_size
         _draw_symbol(
             pdf,
             item.symbol,
-            x + (width - symbol_size) / 2,
-            y + (height - symbol_size) / 2,
-            symbol_size,
-            symbol_size,
+            x + (width - symbol_width) / 2,
+            y + (height - symbol_height) / 2,
+            symbol_width,
+            symbol_height,
         )
         pdf.restoreState()
         return
 
     text_x = x + padding
     text_width = max(1, width - 2 * padding)
-    base_size = min(11.5, max(4.0, height_mm * 0.50)) * settings.font_scale
+    base_size = min(18.0, max(4.0, height_mm * 0.62)) * settings.font_scale
     title_size = base_size
     value_size = max(3.8, base_size * 0.82)
     note_size = max(3.4, base_size * 0.66)
@@ -265,33 +271,38 @@ def _draw_label(
     pdf.setFillColor(colors.HexColor("#111827"))
     available_height = max(1, height - 2 * padding)
     if has_symbol:
-        gap = min(0.45 * mm, available_height * 0.08)
-        symbol_size = max(1, min(width - 2 * padding, available_height * 0.42, 5.2 * mm))
-        text_height = max(1, available_height - symbol_size - gap)
-        lines = _fit_lines_to_height(lines, text_height, min_size=3.0)
+        gap = min(0.7 * mm, available_height * 0.07)
+        symbol_width = max(1, text_width)
+        symbol_height = max(1, min(available_height * 0.48, 9.0 * mm))
+        if not is_text_symbol:
+            symbol_height = max(1, min(text_width, available_height * 0.42, 6.2 * mm))
+            symbol_width = symbol_height
+
+        text_height = max(1, available_height - symbol_height - gap)
+        lines = _fit_lines_to_box(lines, text_width, text_height, min_size=3.0, max_scale=1.08)
         line_heights = _line_heights(lines)
         total_text_height = sum(line_heights)
-        total_block_height = symbol_size + gap + total_text_height
+        total_block_height = symbol_height + gap + total_text_height
         block_top = y + (height + total_block_height) / 2
 
         _draw_symbol(
             pdf,
             item.symbol,
-            x + (width - symbol_size) / 2,
-            block_top - symbol_size,
-            symbol_size,
-            symbol_size,
+            x + (width - symbol_width) / 2,
+            block_top - symbol_height,
+            symbol_width,
+            symbol_height,
         )
         _draw_text_lines(
             pdf,
             text_x,
-            block_top - symbol_size - gap,
+            block_top - symbol_height - gap,
             text_width,
             lines,
             line_heights,
         )
     else:
-        lines = _fit_lines_to_height(lines, available_height, min_size=3.0)
+        lines = _fit_lines_to_box(lines, text_width, available_height, min_size=3.0, max_scale=1.18)
         line_heights = _line_heights(lines)
         total_text_height = sum(line_heights)
         text_top = y + (height + total_text_height) / 2
@@ -324,6 +335,28 @@ def _fit_lines_to_height(
     return [(font_name, text, max(min_size, size * text_scale)) for font_name, text, size in lines]
 
 
+def _fit_lines_to_box(
+    lines: list[tuple[str, str, float]],
+    max_width: float,
+    max_height: float,
+    min_size: float,
+    max_scale: float = 1.0,
+) -> list[tuple[str, str, float]]:
+    line_heights = _line_heights(lines)
+    total_height = sum(line_heights)
+    height_scale = max_height / total_height if total_height else 1.0
+
+    width_scales: list[float] = []
+    for font_name, text, size in lines:
+        text_width = stringWidth(text, font_name, size)
+        if text and text_width > 0:
+            width_scales.append(max_width / text_width)
+
+    width_scale = min(width_scales) if width_scales else 1.0
+    scale = min(height_scale, width_scale, max_scale)
+    return [(font_name, text, max(min_size, size * scale)) for font_name, text, size in lines]
+
+
 def _draw_text_lines(
     pdf: canvas.Canvas,
     x: float,
@@ -335,8 +368,8 @@ def _draw_text_lines(
     cursor_y = top_y
     for (font_name, text, size), line_height in zip(lines, line_heights):
         cursor_y -= line_height
-        fitted_text = _ellipsize(text, font_name, size, width)
-        fitted_size = _fit_font_size(fitted_text, font_name, size, width, min_size=3.0)
+        fitted_size = _fit_font_size(text, font_name, size, width, min_size=3.0)
+        fitted_text = _ellipsize(text, font_name, fitted_size, width)
         text_width = stringWidth(fitted_text, font_name, fitted_size)
         pdf.setFont(font_name, fitted_size)
         pdf.drawString(
@@ -369,6 +402,10 @@ def _draw_cut_marks(pdf: canvas.Canvas, x: float, y: float, width: float, height
 
 
 def _draw_symbol(pdf: canvas.Canvas, symbol: str, x: float, y: float, width: float, height: float) -> None:
+    if symbol in TEXT_SYMBOLS:
+        _draw_text_symbol(pdf, TEXT_SYMBOLS[symbol], x, y, width, height)
+        return
+
     pdf.saveState()
     pdf.translate(x, y)
     pdf.scale(width / 100, height / 100)
@@ -378,11 +415,8 @@ def _draw_symbol(pdf: canvas.Canvas, symbol: str, x: float, y: float, width: flo
     pdf.setLineCap(1)
     pdf.setLineJoin(1)
 
-    if symbol in TEXT_SYMBOLS:
-        _draw_text_symbol(pdf, TEXT_SYMBOLS[symbol])
-    else:
-        drawer = _SYMBOL_DRAWERS.get(symbol, _draw_none)
-        drawer(pdf)
+    drawer = _SYMBOL_DRAWERS.get(symbol, _draw_none)
+    drawer(pdf)
 
     pdf.restoreState()
 
@@ -391,13 +425,74 @@ def _draw_none(pdf: canvas.Canvas) -> None:
     return None
 
 
-def _draw_text_symbol(pdf: canvas.Canvas, text: str) -> None:
+def _draw_text_symbol(pdf: canvas.Canvas, text: str, x: float, y: float, width: float, height: float) -> None:
+    pdf.saveState()
+    pdf.setFillColor(colors.HexColor("#111827"))
     font_name = "Helvetica-Bold"
-    font_size = 44.0
-    while font_size > 18 and stringWidth(text, font_name, font_size) > 86:
-        font_size -= 1
+    padding = min(width, height) * 0.06
+    box_x = x + padding
+    box_y = y + padding
+    box_width = max(1, width - 2 * padding)
+    box_height = max(1, height - 2 * padding)
+    lines, font_size = _fit_text_symbol(text, font_name, box_width, box_height)
+    line_height = font_size * 1.08
+    total_height = len(lines) * line_height
+    cursor_y = box_y + (box_height + total_height) / 2
+
     pdf.setFont(font_name, font_size)
-    pdf.drawCentredString(50, 34, text)
+    for line in lines:
+        cursor_y -= line_height
+        pdf.drawCentredString(box_x + box_width / 2, cursor_y + (line_height - font_size) * 0.25, line)
+    pdf.restoreState()
+
+
+def _fit_text_symbol(text: str, font_name: str, width: float, height: float) -> tuple[list[str], float]:
+    candidates = _text_symbol_candidates(text)
+    best_lines = candidates[0]
+    best_size = 3.0
+    best_score = -1.0
+
+    for lines in candidates:
+        max_size = min(24.0, height / max(1, len(lines)) * 0.82)
+        size = _fit_symbol_lines_size(lines, font_name, max_size, width, height, min_size=3.0)
+        score = size - max(0, len(lines) - 1) * 0.4
+        if score > best_score:
+            best_lines = lines
+            best_size = size
+            best_score = score
+
+    return best_lines, best_size
+
+
+def _text_symbol_candidates(text: str) -> list[list[str]]:
+    compact_text = " ".join(text.split())
+    candidates = [[compact_text]]
+    words = compact_text.split()
+    if len(words) == 2:
+        candidates.append(words)
+    elif len(words) > 2:
+        middle = max(1, len(words) // 2)
+        candidates.append([" ".join(words[:middle]), " ".join(words[middle:])])
+    return candidates
+
+
+def _fit_symbol_lines_size(
+    lines: list[str],
+    font_name: str,
+    max_size: float,
+    max_width: float,
+    max_height: float,
+    min_size: float,
+) -> float:
+    size = max_size
+    while size > min_size:
+        line_height = size * 1.08
+        too_tall = len(lines) * line_height > max_height
+        too_wide = any(stringWidth(line, font_name, size) > max_width for line in lines)
+        if not too_tall and not too_wide:
+            return size
+        size -= 0.25
+    return min_size
 
 
 def _draw_resistor(pdf: canvas.Canvas) -> None:
