@@ -24,6 +24,20 @@ SYMBOL_LABELS = {
     "ic": "Circuit integre",
     "battery": "Pile",
     "fuse": "Fusible",
+    "screw_m1_6": "M1.6",
+    "screw_m2": "M2",
+    "screw_m2_5": "M2.5",
+    "screw_m3": "M3",
+    "screw_m4": "M4",
+    "screw_m5": "M5",
+    "screw_m6": "M6",
+    "screw_m8": "M8",
+}
+
+TEXT_SYMBOLS = {
+    key: label
+    for key, label in SYMBOL_LABELS.items()
+    if key.startswith("screw_")
 }
 
 
@@ -186,23 +200,40 @@ def _draw_label(
         pdf.setLineWidth(0.35)
         pdf.rect(x, y, width, height, stroke=1, fill=0)
 
-    padding = max(1.4 * mm, min(2.8 * mm, height * 0.14, width * 0.07))
-    symbol_size = min(height - 2 * padding, width * 0.24, 12 * mm)
-    symbol_x = x + padding
-    symbol_y = y + (height - symbol_size) / 2
-
+    width_mm = width / mm
+    height_mm = height / mm
+    padding = _label_padding(width, height)
     has_symbol = item.symbol != "none"
+    has_text = bool(item.text or item.value or item.note)
+
+    if has_symbol and not has_text:
+        symbol_size = max(1, min(width - 2 * padding, height - 2 * padding))
+        _draw_symbol(
+            pdf,
+            item.symbol,
+            x + (width - symbol_size) / 2,
+            y + (height - symbol_size) / 2,
+            symbol_size,
+            symbol_size,
+        )
+        pdf.restoreState()
+        return
+
     if has_symbol:
+        symbol_ratio = 0.30 if width_mm <= 18 else 0.24
+        symbol_size = max(1, min(height - 2 * padding, width * symbol_ratio, 12 * mm))
+        symbol_x = x + padding
+        symbol_y = y + (height - symbol_size) / 2
         _draw_symbol(pdf, item.symbol, symbol_x, symbol_y, symbol_size, symbol_size)
-        text_x = symbol_x + symbol_size + padding
+        text_x = symbol_x + symbol_size + min(padding, 1.0 * mm)
     else:
         text_x = x + padding
 
     text_width = max(1, x + width - padding - text_x)
-    base_size = min(11.5, max(6.0, (height / mm) * 0.43)) * settings.font_scale
+    base_size = min(11.5, max(4.0, height_mm * 0.50)) * settings.font_scale
     title_size = base_size
-    value_size = max(5.2, base_size * 0.82)
-    note_size = max(4.6, base_size * 0.64)
+    value_size = max(3.8, base_size * 0.82)
+    note_size = max(3.4, base_size * 0.66)
 
     lines: list[tuple[str, str, float]] = []
     if item.text:
@@ -210,14 +241,22 @@ def _draw_label(
     if item.value:
         lines.append(("Helvetica", item.value, value_size))
     if item.note:
-        for note_line in _wrap_text(item.note, "Helvetica", note_size, text_width, 2):
+        max_note_lines = 1 if height_mm < 12 else 2
+        for note_line in _wrap_text(item.note, "Helvetica", note_size, text_width, max_note_lines):
             lines.append(("Helvetica", note_line, note_size))
 
     if not lines:
         lines.append(("Helvetica", "", value_size))
 
+    max_text_height = max(1, height - 2 * padding)
     line_heights = [size * 1.12 for _, _, size in lines]
     total_height = sum(line_heights)
+    if total_height > max_text_height:
+        text_scale = max(0.68, max_text_height / total_height)
+        lines = [(font_name, text, max(3.1, size * text_scale)) for font_name, text, size in lines]
+        line_heights = [size * 1.12 for _, _, size in lines]
+        total_height = sum(line_heights)
+
     cursor_y = y + (height + total_height) / 2
 
     pdf.setFillColor(colors.HexColor("#111827"))
@@ -231,9 +270,15 @@ def _draw_label(
     pdf.restoreState()
 
 
+def _label_padding(width: float, height: float) -> float:
+    small_side_mm = min(width / mm, height / mm)
+    padding_mm = min(2.2, max(0.55, small_side_mm * 0.08))
+    return padding_mm * mm
+
+
 def _draw_cut_marks(pdf: canvas.Canvas, x: float, y: float, width: float, height: float) -> None:
-    mark = 2.0 * mm
-    offset = 0.55 * mm
+    mark = min(2.0 * mm, width * 0.18, height * 0.22)
+    offset = min(0.55 * mm, width * 0.05, height * 0.05)
     pdf.saveState()
     pdf.setStrokeColor(colors.HexColor("#c4c9cf"))
     pdf.setLineWidth(0.25)
@@ -263,14 +308,26 @@ def _draw_symbol(pdf: canvas.Canvas, symbol: str, x: float, y: float, width: flo
     pdf.setLineCap(1)
     pdf.setLineJoin(1)
 
-    drawer = _SYMBOL_DRAWERS.get(symbol, _draw_none)
-    drawer(pdf)
+    if symbol in TEXT_SYMBOLS:
+        _draw_text_symbol(pdf, TEXT_SYMBOLS[symbol])
+    else:
+        drawer = _SYMBOL_DRAWERS.get(symbol, _draw_none)
+        drawer(pdf)
 
     pdf.restoreState()
 
 
 def _draw_none(pdf: canvas.Canvas) -> None:
     return None
+
+
+def _draw_text_symbol(pdf: canvas.Canvas, text: str) -> None:
+    font_name = "Helvetica-Bold"
+    font_size = 44.0
+    while font_size > 18 and stringWidth(text, font_name, font_size) > 86:
+        font_size -= 1
+    pdf.setFont(font_name, font_size)
+    pdf.drawCentredString(50, 34, text)
 
 
 def _draw_resistor(pdf: canvas.Canvas) -> None:
@@ -440,4 +497,3 @@ def _wrap_text(text: str, font_name: str, font_size: float, max_width: float, ma
         lines[-1] = _ellipsize(lines[-1], font_name, font_size, max_width)
 
     return lines
-

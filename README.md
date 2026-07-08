@@ -2,6 +2,8 @@
 
 Interface Streamlit pour composer des etiquettes d'atelier electronique et exporter un PDF imprimable aux dimensions exactes.
 
+Par defaut, le format est regle sur des etiquettes de `12,5 x 10 mm`, organisees sur A4 en `16 x 29` etiquettes sans espace.
+
 ## Lancement
 
 Double-cliquer sur `lancer_streamlit.bat`.
@@ -16,7 +18,10 @@ http://127.0.0.1:8585
 
 Le PDF est genere avec ReportLab en millimetres. Dans la fenetre d'impression, choisir `Taille reelle`, `100 %` ou `Aucune mise a l'echelle` pour conserver les dimensions des etiquettes.
 
+## Symboles
+
+L'interface contient une banque de symboles electroniques et une banque de vis. Les symboles de vis sont rendus simplement sous la forme `M2`, `M3`, `M4`, etc.
+
 ## Git
 
 `instruction.md` et `.venv/` sont ignores par Git.
-

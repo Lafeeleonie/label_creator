@@ -6,7 +6,7 @@ from html import escape
 import pandas as pd
 import streamlit as st
 
-from label_pdf import LabelItem, LabelSheetSettings, SYMBOL_LABELS, build_label_pdf, validate_layout
+from label_pdf import LabelItem, LabelSheetSettings, SYMBOL_LABELS, TEXT_SYMBOLS, build_label_pdf, validate_layout
 
 
 PAGE_FORMATS_MM = {
@@ -16,10 +16,37 @@ PAGE_FORMATS_MM = {
 }
 
 DEFAULT_ROWS = [
-    {"Qte": 6, "Symbole": "Resistance", "Texte": "R 10 k", "Valeur": "10 kOhm", "Note": "1/4 W"},
-    {"Qte": 4, "Symbole": "Condensateur", "Texte": "C 100 nF", "Valeur": "100 nF", "Note": "Ceramique"},
-    {"Qte": 3, "Symbole": "LED", "Texte": "LED rouge", "Valeur": "5 mm", "Note": "Anode longue"},
+    {"Qte": 16, "Symbole": "Resistance", "Texte": "10k", "Valeur": "", "Note": ""},
+    {"Qte": 16, "Symbole": "Condensateur", "Texte": "100n", "Valeur": "", "Note": ""},
+    {"Qte": 24, "Symbole": "M3", "Texte": "", "Valeur": "", "Note": ""},
 ]
+
+SYMBOL_BANK_GROUPS = {
+    "Electronique": [
+        "resistor",
+        "capacitor",
+        "electrolytic",
+        "diode",
+        "led",
+        "transistor_npn",
+        "ground",
+        "switch",
+        "inductor",
+        "ic",
+        "battery",
+        "fuse",
+    ],
+    "Vis": [
+        "screw_m1_6",
+        "screw_m2",
+        "screw_m2_5",
+        "screw_m3",
+        "screw_m4",
+        "screw_m5",
+        "screw_m6",
+        "screw_m8",
+    ],
+}
 
 
 def main() -> None:
@@ -35,6 +62,7 @@ def main() -> None:
 
     editor_col, preview_col = st.columns([1.08, 0.92], gap="large")
     with editor_col:
+        _symbol_bank()
         st.subheader("Etiquettes")
         edited = st.data_editor(
             pd.DataFrame(st.session_state.rows),
@@ -100,16 +128,16 @@ def _sidebar_settings() -> LabelSheetSettings:
     else:
         page_width, page_height = default_width, default_height
 
-    label_width = st.sidebar.number_input("Largeur etiquette (mm)", min_value=5.0, max_value=200.0, value=48.0, step=0.5)
-    label_height = st.sidebar.number_input("Hauteur etiquette (mm)", min_value=5.0, max_value=100.0, value=18.0, step=0.5)
+    label_width = st.sidebar.number_input("Largeur etiquette (mm)", min_value=5.0, max_value=200.0, value=12.5, step=0.5)
+    label_height = st.sidebar.number_input("Hauteur etiquette (mm)", min_value=5.0, max_value=100.0, value=10.0, step=0.5)
 
-    columns = st.sidebar.number_input("Colonnes", min_value=1, max_value=20, value=4, step=1)
-    rows = st.sidebar.number_input("Lignes", min_value=1, max_value=40, value=13, step=1)
+    columns = st.sidebar.number_input("Colonnes", min_value=1, max_value=50, value=16, step=1)
+    rows = st.sidebar.number_input("Lignes", min_value=1, max_value=80, value=29, step=1)
 
-    margin_left = st.sidebar.number_input("Marge gauche (mm)", min_value=0.0, max_value=100.0, value=7.0, step=0.5)
-    margin_top = st.sidebar.number_input("Marge haute (mm)", min_value=0.0, max_value=100.0, value=10.0, step=0.5)
-    gap_x = st.sidebar.number_input("Espace horizontal (mm)", min_value=0.0, max_value=50.0, value=3.0, step=0.5)
-    gap_y = st.sidebar.number_input("Espace vertical (mm)", min_value=0.0, max_value=50.0, value=3.0, step=0.5)
+    margin_left = st.sidebar.number_input("Marge gauche (mm)", min_value=0.0, max_value=100.0, value=5.0, step=0.5)
+    margin_top = st.sidebar.number_input("Marge haute (mm)", min_value=0.0, max_value=100.0, value=3.5, step=0.5)
+    gap_x = st.sidebar.number_input("Espace horizontal (mm)", min_value=0.0, max_value=50.0, value=0.0, step=0.1)
+    gap_y = st.sidebar.number_input("Espace vertical (mm)", min_value=0.0, max_value=50.0, value=0.0, step=0.1)
 
     capacity = int(columns * rows)
     skip_slots = st.sidebar.number_input("Cases deja utilisees", min_value=0, max_value=max(0, capacity - 1), value=0, step=1)
@@ -137,20 +165,54 @@ def _sidebar_settings() -> LabelSheetSettings:
     )
 
 
+def _symbol_bank() -> None:
+    st.subheader("Banque de symboles")
+    tabs = st.tabs(list(SYMBOL_BANK_GROUPS.keys()))
+    for tab, (group_name, symbols) in zip(tabs, SYMBOL_BANK_GROUPS.items()):
+        with tab:
+            column_count = 4 if group_name == "Vis" else 3
+            _symbol_button_grid(symbols, column_count)
+
+
+def _symbol_button_grid(symbols: list[str], column_count: int) -> None:
+    for start in range(0, len(symbols), column_count):
+        columns = st.columns(column_count)
+        for column, symbol in zip(columns, symbols[start : start + column_count]):
+            label = SYMBOL_LABELS[symbol]
+            with column:
+                if st.button(label, key=f"bank_{symbol}", width="stretch"):
+                    _append_symbol_row(symbol)
+
+
+def _append_symbol_row(symbol: str) -> None:
+    st.session_state.rows.append(
+        {
+            "Qte": 1,
+            "Symbole": SYMBOL_LABELS[symbol],
+            "Texte": "",
+            "Valeur": "",
+            "Note": "",
+        }
+    )
+
+
 def _rows_to_items(rows: list[dict[str, object]]) -> list[LabelItem]:
     mapping = _label_to_symbol()
     items: list[LabelItem] = []
     for row in rows:
         quantity = int(row.get("Qte") or 0)
+        symbol = mapping.get(str(row.get("Symbole") or "Aucun"), "none")
         text = str(row.get("Texte") or "").strip()
         value = str(row.get("Valeur") or "").strip()
         note = str(row.get("Note") or "").strip()
-        if quantity <= 0 or not any([text, value, note]):
+        if quantity <= 0:
+            continue
+        if symbol == "none" and not any([text, value, note]):
             continue
         items.append(
             LabelItem(
                 quantity=quantity,
-                symbol=mapping.get(str(row.get("Symbole") or "Aucun"), "none"),
+                symbol=symbol,
                 text=text,
                 value=value,
                 note=note,
@@ -188,15 +250,29 @@ def _preview_html(items: list[LabelItem], settings: LabelSheetSettings) -> str:
         top = (settings.margin_top_mm + row * (settings.label_height_mm + settings.gap_y_mm)) / page_h * 100
         width = label_w / page_w * 100
         height = label_h / page_h * 100
-        cells.append(
-            f"""
-            <div class="label" style="left:{left:.4f}%;top:{top:.4f}%;width:{width:.4f}%;height:{height:.4f}%;">
-                <div class="symbol">{_symbol_svg(item.symbol)}</div>
+        has_symbol = item.symbol != "none"
+        has_text = bool(item.text or item.value or item.note)
+        classes = ["label"]
+        if has_symbol and not has_text:
+            classes.append("symbol-only")
+        elif not has_symbol:
+            classes.append("text-only")
+
+        symbol_html = f'<div class="symbol">{_symbol_svg(item.symbol)}</div>' if has_symbol else ""
+        copy_html = ""
+        if has_text:
+            copy_html = f"""
                 <div class="copy">
                     <strong>{escape(item.text)}</strong>
                     <span>{escape(item.value)}</span>
                     <small>{escape(item.note)}</small>
                 </div>
+            """
+        cells.append(
+            f"""
+            <div class="{' '.join(classes)}" style="left:{left:.4f}%;top:{top:.4f}%;width:{width:.4f}%;height:{height:.4f}%;">
+                {symbol_html}
+                {copy_html}
             </div>
             """
         )
@@ -232,18 +308,32 @@ def _preview_html(items: list[LabelItem], settings: LabelSheetSettings) -> str:
             .label {{
                 position: absolute;
                 display: grid;
-                grid-template-columns: minmax(18px, 26%) minmax(0, 1fr);
+                grid-template-columns: minmax(10px, 30%) minmax(0, 1fr);
                 align-items: center;
-                gap: 5%;
+                gap: 4%;
                 border: {border};
-                padding: 2.5%;
+                padding: 4%;
                 box-sizing: border-box;
                 background: #fff;
+            }}
+            .label.text-only {{
+                grid-template-columns: minmax(0, 1fr);
+            }}
+            .label.symbol-only {{
+                grid-template-columns: minmax(0, 1fr);
+                place-items: center;
+                padding: 5%;
+            }}
+            .label.symbol-only .symbol {{
+                width: 82%;
+                height: 82%;
+                display: grid;
+                place-items: center;
             }}
             .symbol svg {{
                 display: block;
                 width: 100%;
-                height: auto;
+                height: 100%;
                 color: #111827;
             }}
             .copy {{
@@ -298,6 +388,14 @@ def _expanded_preview_items(items: list[LabelItem]) -> list[LabelItem]:
 
 
 def _symbol_svg(symbol: str) -> str:
+    if symbol in TEXT_SYMBOLS:
+        label = escape(TEXT_SYMBOLS[symbol])
+        return f"""
+        <svg viewBox="0 0 56 56" aria-hidden="true">
+            <text x="28" y="30" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="currentColor">{label}</text>
+        </svg>
+        """
+
     strokes = {
         "none": "",
         "resistor": '<polyline points="5,25 10,25 14,12 20,38 26,12 32,38 38,12 44,38 48,25 55,25" />',
