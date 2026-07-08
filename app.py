@@ -6,58 +6,36 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from label_pdf import LabelItem, LabelSheetSettings, SYMBOL_LABELS, build_label_pdf, validate_layout
+from label_domain import (
+    AppDefaults,
+    AutoLayout,
+    MarginDefaults,
+    PAGE_FORMATS_MM,
+    SYMBOL_BANK_GROUPS,
+    compute_auto_layout,
+    dataframe_to_rows,
+    default_rows_as_dataframe,
+    label_to_symbol,
+    load_app_defaults,
+    normalize_editor_dataframe,
+    normalize_row,
+    rows_to_dataframe,
+    rows_to_items,
+)
+from label_pdf import LabelSheetSettings, SYMBOL_LABELS, build_label_pdf, validate_layout
 
 
-PAGE_FORMATS_MM = {
-    "A4": (210.0, 297.0),
-    "Letter": (215.9, 279.4),
-    "Personnalise": (210.0, 297.0),
-}
-
-DEFAULT_ROWS = [
-    {"Qte": 1, "Symbole": "Resistance", "Texte": "10k", "Valeur": "", "Note": ""},
-    {"Qte": 1, "Symbole": "Condensateur", "Texte": "100n", "Valeur": "", "Note": ""},
-    {"Qte": 1, "Symbole": "M3", "Texte": "", "Valeur": "", "Note": ""},
-]
-
-EDITOR_COLUMNS = ["Qte", "Symbole", "Texte", "Valeur", "Note"]
-
-SYMBOL_BANK_GROUPS = {
-    "Electronique": [
-        "resistor",
-        "capacitor",
-        "electrolytic",
-        "diode",
-        "led",
-        "transistor_npn",
-        "ground",
-        "switch",
-        "inductor",
-        "ic",
-        "battery",
-        "fuse",
-    ],
-    "Vis": [
-        "screw_m1_6",
-        "screw_m2",
-        "screw_m2_5",
-        "screw_m3",
-        "screw_m4",
-        "screw_m5",
-        "screw_m6",
-        "screw_m8",
-    ],
-}
+APP_DEFAULTS = load_app_defaults()
 
 
 def main() -> None:
     st.set_page_config(page_title="Editeur d'etiquettes", page_icon="label", layout="wide")
     _inject_css()
 
-    _ensure_editor_state()
+    _ensure_editor_state(APP_DEFAULTS)
 
-    settings = _sidebar_settings()
+    layout = _sidebar_settings(APP_DEFAULTS)
+    settings = layout.settings
 
     st.title("Editeur d'etiquettes atelier")
 
@@ -85,7 +63,7 @@ def main() -> None:
                 ),
                 "Symbole": st.column_config.SelectboxColumn(
                     "Symbole",
-                    options=list(_label_to_symbol().keys()),
+                    options=list(label_to_symbol().keys()),
                     width="medium",
                 ),
                 "Texte": st.column_config.TextColumn("Texte", width="medium"),
@@ -93,9 +71,9 @@ def main() -> None:
                 "Note": st.column_config.TextColumn("Note", width="large"),
             },
         )
-        current_rows = _dataframe_to_rows(edited)
+        current_rows = dataframe_to_rows(edited)
 
-        items = _rows_to_items(current_rows)
+        items = rows_to_items(current_rows)
         errors = validate_layout(settings)
         total_labels = sum(item.quantity for item in items)
         page_count = max(1, (settings.skip_slots + total_labels + settings.capacity_per_page - 1) // settings.capacity_per_page)
@@ -104,6 +82,12 @@ def main() -> None:
         metric_col_1.metric("Etiquettes", total_labels)
         metric_col_2.metric("Par page", settings.capacity_per_page)
         metric_col_3.metric("Pages PDF", page_count)
+        st.caption(
+            "Grille calculee : "
+            f"{settings.columns} colonnes x {settings.rows} lignes, "
+            f"marges finales {settings.margin_left_mm:g} / {layout.margin_right_mm:g} / "
+            f"{settings.margin_top_mm:g} / {layout.margin_bottom_mm:g} mm."
+        )
 
         if errors:
             for error in errors:
@@ -132,52 +116,203 @@ def main() -> None:
             st.info("Aucun PDF a afficher.")
 
 
-def _sidebar_settings() -> LabelSheetSettings:
+def _sidebar_settings(defaults: AppDefaults) -> AutoLayout:
     st.sidebar.header("Format")
-    paper = st.sidebar.selectbox("Papier", list(PAGE_FORMATS_MM.keys()), index=0)
+    paper_options = list(PAGE_FORMATS_MM.keys())
+    paper_index = paper_options.index(defaults.page.format) if defaults.page.format in paper_options else 0
+    paper = st.sidebar.selectbox("Papier", paper_options, index=paper_index)
     default_width, default_height = PAGE_FORMATS_MM[paper]
 
     if paper == "Personnalise":
-        page_width = st.sidebar.number_input("Largeur page (mm)", min_value=20.0, max_value=500.0, value=default_width, step=1.0)
-        page_height = st.sidebar.number_input("Hauteur page (mm)", min_value=20.0, max_value=700.0, value=default_height, step=1.0)
+        page_width = st.sidebar.number_input(
+            "Largeur page (mm)",
+            min_value=20.0,
+            max_value=500.0,
+            value=defaults.page.width_mm,
+            step=1.0,
+        )
+        page_height = st.sidebar.number_input(
+            "Hauteur page (mm)",
+            min_value=20.0,
+            max_value=700.0,
+            value=defaults.page.height_mm,
+            step=1.0,
+        )
     else:
         page_width, page_height = default_width, default_height
 
-    label_width = st.sidebar.number_input("Largeur etiquette (mm)", min_value=5.0, max_value=200.0, value=12.5, step=0.5)
-    label_height = st.sidebar.number_input("Hauteur etiquette (mm)", min_value=5.0, max_value=100.0, value=10.0, step=0.5)
+    st.sidebar.header("Etiquettes")
+    label_width = st.sidebar.number_input(
+        "Largeur etiquette (mm)",
+        min_value=5.0,
+        max_value=200.0,
+        value=defaults.labels.width_mm,
+        step=0.5,
+    )
+    label_height = st.sidebar.number_input(
+        "Hauteur etiquette (mm)",
+        min_value=5.0,
+        max_value=100.0,
+        value=defaults.labels.height_mm,
+        step=0.5,
+    )
+    gap_x = st.sidebar.number_input(
+        "Espace horizontal (mm)",
+        min_value=0.0,
+        max_value=50.0,
+        value=defaults.labels.gap_x_mm,
+        step=0.1,
+    )
+    gap_y = st.sidebar.number_input(
+        "Espace vertical (mm)",
+        min_value=0.0,
+        max_value=50.0,
+        value=defaults.labels.gap_y_mm,
+        step=0.1,
+    )
 
-    columns = st.sidebar.number_input("Colonnes", min_value=1, max_value=50, value=16, step=1)
-    rows = st.sidebar.number_input("Lignes", min_value=1, max_value=80, value=29, step=1)
+    st.sidebar.header("Marges minimales")
+    margin_top = st.sidebar.number_input(
+        "Marge haute (mm)",
+        min_value=0.0,
+        max_value=100.0,
+        value=defaults.margins.top_mm,
+        step=0.5,
+    )
+    margin_right = st.sidebar.number_input(
+        "Marge droite (mm)",
+        min_value=0.0,
+        max_value=100.0,
+        value=defaults.margins.right_mm,
+        step=0.5,
+    )
+    margin_bottom = st.sidebar.number_input(
+        "Marge basse (mm)",
+        min_value=0.0,
+        max_value=100.0,
+        value=defaults.margins.bottom_mm,
+        step=0.5,
+    )
+    margin_left = st.sidebar.number_input(
+        "Marge gauche (mm)",
+        min_value=0.0,
+        max_value=100.0,
+        value=defaults.margins.left_mm,
+        step=0.5,
+    )
 
-    margin_left = st.sidebar.number_input("Marge gauche (mm)", min_value=0.0, max_value=100.0, value=5.0, step=0.5)
-    margin_top = st.sidebar.number_input("Marge haute (mm)", min_value=0.0, max_value=100.0, value=3.5, step=0.5)
-    gap_x = st.sidebar.number_input("Espace horizontal (mm)", min_value=0.0, max_value=50.0, value=0.0, step=0.1)
-    gap_y = st.sidebar.number_input("Espace vertical (mm)", min_value=0.0, max_value=50.0, value=0.0, step=0.1)
+    margins = MarginDefaults(
+        top_mm=float(margin_top),
+        right_mm=float(margin_right),
+        bottom_mm=float(margin_bottom),
+        left_mm=float(margin_left),
+    )
+    preview_layout = _compute_layout_or_default(
+        defaults=defaults,
+        page_width=float(page_width),
+        page_height=float(page_height),
+        label_width=float(label_width),
+        label_height=float(label_height),
+        margins=margins,
+        gap_x=float(gap_x),
+        gap_y=float(gap_y),
+        skip_slots=defaults.skip_slots,
+        show_border=defaults.style.show_border,
+        cut_marks=defaults.style.cut_marks,
+        font_scale=defaults.style.font_scale,
+    )
 
-    capacity = int(columns * rows)
-    skip_slots = st.sidebar.number_input("Cases deja utilisees", min_value=0, max_value=max(0, capacity - 1), value=0, step=1)
+    st.sidebar.header("Grille")
+    st.sidebar.write(f"{preview_layout.settings.columns} colonnes x {preview_layout.settings.rows} lignes")
+    st.sidebar.caption(
+        "Marges finales : "
+        f"gauche {preview_layout.settings.margin_left_mm:g} mm, "
+        f"droite {preview_layout.margin_right_mm:g} mm, "
+        f"haute {preview_layout.settings.margin_top_mm:g} mm, "
+        f"basse {preview_layout.margin_bottom_mm:g} mm."
+    )
+    skip_slots = st.sidebar.number_input(
+        "Cases deja utilisees",
+        min_value=0,
+        max_value=max(0, preview_layout.settings.capacity_per_page - 1),
+        value=min(defaults.skip_slots, max(0, preview_layout.settings.capacity_per_page - 1)),
+        step=1,
+    )
 
     st.sidebar.header("Style")
-    show_border = st.sidebar.checkbox("Contour", value=True)
-    cut_marks = st.sidebar.checkbox("Reperes de coupe", value=True)
-    font_scale = st.sidebar.slider("Taille du texte", min_value=0.75, max_value=1.35, value=1.0, step=0.05)
+    show_border = st.sidebar.checkbox("Contour", value=defaults.style.show_border)
+    cut_marks = st.sidebar.checkbox("Reperes de coupe", value=defaults.style.cut_marks)
+    font_scale = st.sidebar.slider(
+        "Taille du texte",
+        min_value=0.75,
+        max_value=1.35,
+        value=defaults.style.font_scale,
+        step=0.05,
+    )
 
-    return LabelSheetSettings(
-        page_width_mm=float(page_width),
-        page_height_mm=float(page_height),
-        label_width_mm=float(label_width),
-        label_height_mm=float(label_height),
-        columns=int(columns),
-        rows=int(rows),
-        margin_left_mm=float(margin_left),
-        margin_top_mm=float(margin_top),
-        gap_x_mm=float(gap_x),
-        gap_y_mm=float(gap_y),
+    return _compute_layout_or_default(
+        defaults=defaults,
+        page_width=float(page_width),
+        page_height=float(page_height),
+        label_width=float(label_width),
+        label_height=float(label_height),
+        margins=margins,
+        gap_x=float(gap_x),
+        gap_y=float(gap_y),
         skip_slots=int(skip_slots),
         show_border=show_border,
         cut_marks=cut_marks,
         font_scale=float(font_scale),
+        show_error=False,
     )
+
+
+def _compute_layout_or_default(
+    *,
+    defaults: AppDefaults,
+    page_width: float,
+    page_height: float,
+    label_width: float,
+    label_height: float,
+    margins: MarginDefaults,
+    gap_x: float,
+    gap_y: float,
+    skip_slots: int,
+    show_border: bool,
+    cut_marks: bool,
+    font_scale: float,
+    show_error: bool = True,
+) -> AutoLayout:
+    try:
+        return compute_auto_layout(
+            page_width_mm=page_width,
+            page_height_mm=page_height,
+            label_width_mm=label_width,
+            label_height_mm=label_height,
+            margins=margins,
+            gap_x_mm=gap_x,
+            gap_y_mm=gap_y,
+            skip_slots=skip_slots,
+            show_border=show_border,
+            cut_marks=cut_marks,
+            font_scale=font_scale,
+        )
+    except ValueError as error:
+        if show_error:
+            st.sidebar.error(str(error))
+        return compute_auto_layout(
+            page_width_mm=defaults.page.width_mm,
+            page_height_mm=defaults.page.height_mm,
+            label_width_mm=defaults.labels.width_mm,
+            label_height_mm=defaults.labels.height_mm,
+            margins=defaults.margins,
+            gap_x_mm=defaults.labels.gap_x_mm,
+            gap_y_mm=defaults.labels.gap_y_mm,
+            skip_slots=0,
+            show_border=defaults.style.show_border,
+            cut_marks=defaults.style.cut_marks,
+            font_scale=defaults.style.font_scale,
+        )
 
 
 def _symbol_bank() -> None:
@@ -201,7 +336,7 @@ def _symbol_button_grid(symbols: list[str], column_count: int) -> None:
 
 def _append_symbol_row(symbol: str) -> None:
     current_df = _current_editor_dataframe()
-    rows = _dataframe_to_rows(current_df)
+    rows = dataframe_to_rows(current_df)
     rows.append(
         {
             "Qte": 1,
@@ -211,13 +346,13 @@ def _append_symbol_row(symbol: str) -> None:
             "Note": "",
         }
     )
-    st.session_state.labels_df = _rows_to_dataframe(rows)
+    st.session_state.labels_df = rows_to_dataframe(rows)
     _reset_editor_widget()
 
 
-def _ensure_editor_state() -> None:
+def _ensure_editor_state(defaults: AppDefaults) -> None:
     if "labels_df" not in st.session_state:
-        st.session_state.labels_df = _rows_to_dataframe(DEFAULT_ROWS)
+        st.session_state.labels_df = default_rows_as_dataframe(defaults)
     if "editor_version" not in st.session_state:
         st.session_state.editor_version = 0
 
@@ -239,7 +374,7 @@ def _current_editor_dataframe(editor_key: str | None = None) -> pd.DataFrame:
     base_df = st.session_state.labels_df.copy()
     editor_state = st.session_state.get(editor_key or _editor_key())
     if not isinstance(editor_state, dict):
-        return _normalize_editor_dataframe(base_df)
+        return normalize_editor_dataframe(base_df)
 
     edited_rows = editor_state.get("edited_rows") or {}
     for row_index, changes in edited_rows.items():
@@ -257,79 +392,10 @@ def _current_editor_dataframe(editor_key: str | None = None) -> pd.DataFrame:
 
     added_rows = editor_state.get("added_rows") or []
     if added_rows:
-        additions = [_normalize_row(row) for row in added_rows]
+        additions = [normalize_row(row) for row in added_rows]
         base_df = pd.concat([base_df, pd.DataFrame(additions)], ignore_index=True)
 
-    return _normalize_editor_dataframe(base_df)
-
-
-def _rows_to_dataframe(rows: list[dict[str, object]]) -> pd.DataFrame:
-    return _normalize_editor_dataframe(pd.DataFrame([_normalize_row(row) for row in rows]))
-
-
-def _normalize_editor_dataframe(data: pd.DataFrame) -> pd.DataFrame:
-    normalized = data.copy()
-    for column in EDITOR_COLUMNS:
-        if column not in normalized.columns:
-            normalized[column] = ""
-
-    normalized = normalized[EDITOR_COLUMNS].fillna("")
-    normalized["Qte"] = normalized["Qte"].apply(_normalize_quantity)
-    for column in ["Symbole", "Texte", "Valeur", "Note"]:
-        normalized[column] = normalized[column].astype(str)
-    return normalized.reset_index(drop=True)
-
-
-def _normalize_row(row: dict[str, object]) -> dict[str, object]:
-    return {
-        "Qte": _normalize_quantity(row.get("Qte", 1)),
-        "Symbole": str(row.get("Symbole", "")),
-        "Texte": str(row.get("Texte", "")),
-        "Valeur": str(row.get("Valeur", "")),
-        "Note": str(row.get("Note", "")),
-    }
-
-
-def _normalize_quantity(value: object) -> int:
-    try:
-        if value == "":
-            return 1
-        return max(0, int(float(value)))
-    except (TypeError, ValueError):
-        return 1
-
-
-def _dataframe_to_rows(data: pd.DataFrame) -> list[dict[str, object]]:
-    return _normalize_editor_dataframe(data).to_dict("records")
-
-
-def _rows_to_items(rows: list[dict[str, object]]) -> list[LabelItem]:
-    mapping = _label_to_symbol()
-    items: list[LabelItem] = []
-    for row in rows:
-        quantity = int(row.get("Qte") or 0)
-        symbol = mapping.get(str(row.get("Symbole") or "Aucun"), "none")
-        text = str(row.get("Texte") or "").strip()
-        value = str(row.get("Valeur") or "").strip()
-        note = str(row.get("Note") or "").strip()
-        if quantity <= 0:
-            continue
-        if symbol == "none" and not any([text, value, note]):
-            continue
-        items.append(
-            LabelItem(
-                quantity=quantity,
-                symbol=symbol,
-                text=text,
-                value=value,
-                note=note,
-            )
-        )
-    return items
-
-
-def _label_to_symbol() -> dict[str, str]:
-    return {label: key for key, label in SYMBOL_LABELS.items()}
+    return normalize_editor_dataframe(base_df)
 
 
 def _preview_height(settings: LabelSheetSettings) -> int:

@@ -66,6 +66,8 @@ class LabelSheetSettings:
     show_border: bool = True
     cut_marks: bool = True
     font_scale: float = 1.0
+    margin_right_mm: float = 0.0
+    margin_bottom_mm: float = 0.0
 
     @property
     def capacity_per_page(self) -> int:
@@ -85,6 +87,8 @@ def validate_layout(settings: LabelSheetSettings) -> list[str]:
         "hauteur d'etiquette": settings.label_height_mm,
         "marge gauche": settings.margin_left_mm,
         "marge haute": settings.margin_top_mm,
+        "marge droite": settings.margin_right_mm,
+        "marge basse": settings.margin_bottom_mm,
         "espace horizontal": settings.gap_x_mm,
         "espace vertical": settings.gap_y_mm,
     }
@@ -96,11 +100,13 @@ def validate_layout(settings: LabelSheetSettings) -> list[str]:
         settings.margin_left_mm
         + settings.columns * settings.label_width_mm
         + max(0, settings.columns - 1) * settings.gap_x_mm
+        + settings.margin_right_mm
     )
     used_height = (
         settings.margin_top_mm
         + settings.rows * settings.label_height_mm
         + max(0, settings.rows - 1) * settings.gap_y_mm
+        + settings.margin_bottom_mm
     )
 
     if used_width > settings.page_width_mm + 0.05:

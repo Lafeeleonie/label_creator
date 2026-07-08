@@ -1,0 +1,45 @@
+[page]
+format = "A4"
+width_mm = 210.0
+height_mm = 297.0
+
+[margins]
+top_mm = 10.0
+right_mm = 10.0
+bottom_mm = 10.0
+left_mm = 10.0
+
+[labels]
+width_mm = 12.5
+height_mm = 10.0
+gap_x_mm = 0.0
+gap_y_mm = 0.0
+
+[defaults]
+skip_slots = 0
+
+[style]
+show_border = true
+cut_marks = true
+font_scale = 1.0
+
+[[default_rows]]
+qte = 1
+symbole = "Resistance"
+texte = "10k"
+valeur = ""
+note = ""
+
+[[default_rows]]
+qte = 1
+symbole = "Condensateur"
+texte = "100n"
+valeur = ""
+note = ""
+
+[[default_rows]]
+qte = 1
+symbole = "M3"
+texte = ""
+valeur = ""
+note = ""

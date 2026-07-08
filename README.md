@@ -2,7 +2,9 @@
 
 Interface Streamlit pour composer des etiquettes d'atelier electronique et exporter un PDF imprimable aux dimensions exactes.
 
-Par defaut, le format est regle sur des etiquettes de `12,5 x 10 mm`, organisees sur A4 en `16 x 29` etiquettes sans espace.
+Les valeurs par defaut sont dans `config.toml` : page A4, marges minimales de `10 mm`, etiquettes de `12,5 x 10 mm` et aucun espacement.
+
+Le nombre de lignes et de colonnes est calcule automatiquement pour ne garder que des etiquettes completes. Si de la place reste sur la page, elle est ajoutee aux marges finales pour centrer la grille.
 
 L'interface utilise un theme sombre par defaut.
 
