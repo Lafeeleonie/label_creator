@@ -16,10 +16,12 @@ PAGE_FORMATS_MM = {
 }
 
 DEFAULT_ROWS = [
-    {"Qte": 16, "Symbole": "Resistance", "Texte": "10k", "Valeur": "", "Note": ""},
-    {"Qte": 16, "Symbole": "Condensateur", "Texte": "100n", "Valeur": "", "Note": ""},
-    {"Qte": 24, "Symbole": "M3", "Texte": "", "Valeur": "", "Note": ""},
+    {"Qte": 1, "Symbole": "Resistance", "Texte": "10k", "Valeur": "", "Note": ""},
+    {"Qte": 1, "Symbole": "Condensateur", "Texte": "100n", "Valeur": "", "Note": ""},
+    {"Qte": 1, "Symbole": "M3", "Texte": "", "Valeur": "", "Note": ""},
 ]
+
+EDITOR_COLUMNS = ["Qte", "Symbole", "Texte", "Valeur", "Note"]
 
 SYMBOL_BANK_GROUPS = {
     "Electronique": [
@@ -64,7 +66,7 @@ def main() -> None:
         _symbol_bank()
         st.subheader("Etiquettes")
         edited = st.data_editor(
-            pd.DataFrame(st.session_state.rows),
+            st.session_state.labels_df,
             key="labels_editor",
             hide_index=True,
             num_rows="dynamic",
@@ -81,9 +83,9 @@ def main() -> None:
                 "Note": st.column_config.TextColumn("Note", width="large"),
             },
         )
-        st.session_state.rows = _dataframe_to_rows(edited)
+        current_rows = _dataframe_to_rows(edited)
 
-        items = _rows_to_items(st.session_state.rows)
+        items = _rows_to_items(current_rows)
         errors = validate_layout(settings)
         total_labels = sum(item.quantity for item in items)
         page_count = max(1, (settings.skip_slots + total_labels + settings.capacity_per_page - 1) // settings.capacity_per_page)
@@ -188,7 +190,8 @@ def _symbol_button_grid(symbols: list[str], column_count: int) -> None:
 
 
 def _append_symbol_row(symbol: str) -> None:
-    rows = list(st.session_state.rows)
+    current_df = _current_editor_dataframe()
+    rows = _dataframe_to_rows(current_df)
     rows.append(
         {
             "Qte": 1,
@@ -198,17 +201,81 @@ def _append_symbol_row(symbol: str) -> None:
             "Note": "",
         }
     )
-    st.session_state.rows = rows
+    st.session_state.labels_df = _rows_to_dataframe(rows)
     st.session_state.pop("labels_editor", None)
 
 
 def _ensure_editor_state() -> None:
-    if "rows" not in st.session_state:
-        st.session_state.rows = [row.copy() for row in DEFAULT_ROWS]
+    if "labels_df" not in st.session_state:
+        st.session_state.labels_df = _rows_to_dataframe(DEFAULT_ROWS)
+
+
+def _current_editor_dataframe() -> pd.DataFrame:
+    base_df = st.session_state.labels_df.copy()
+    editor_state = st.session_state.get("labels_editor")
+    if not isinstance(editor_state, dict):
+        return _normalize_editor_dataframe(base_df)
+
+    edited_rows = editor_state.get("edited_rows") or {}
+    for row_index, changes in edited_rows.items():
+        row_position = int(row_index)
+        if row_position >= len(base_df):
+            continue
+        for column_name, value in changes.items():
+            if column_name in base_df.columns:
+                base_df.at[base_df.index[row_position], column_name] = "" if value is None else value
+
+    deleted_rows = sorted((int(row) for row in editor_state.get("deleted_rows") or []), reverse=True)
+    for row_position in deleted_rows:
+        if row_position < len(base_df):
+            base_df = base_df.drop(base_df.index[row_position])
+
+    added_rows = editor_state.get("added_rows") or []
+    if added_rows:
+        additions = [_normalize_row(row) for row in added_rows]
+        base_df = pd.concat([base_df, pd.DataFrame(additions)], ignore_index=True)
+
+    return _normalize_editor_dataframe(base_df)
+
+
+def _rows_to_dataframe(rows: list[dict[str, object]]) -> pd.DataFrame:
+    return _normalize_editor_dataframe(pd.DataFrame([_normalize_row(row) for row in rows]))
+
+
+def _normalize_editor_dataframe(data: pd.DataFrame) -> pd.DataFrame:
+    normalized = data.copy()
+    for column in EDITOR_COLUMNS:
+        if column not in normalized.columns:
+            normalized[column] = ""
+
+    normalized = normalized[EDITOR_COLUMNS].fillna("")
+    normalized["Qte"] = normalized["Qte"].apply(_normalize_quantity)
+    for column in ["Symbole", "Texte", "Valeur", "Note"]:
+        normalized[column] = normalized[column].astype(str)
+    return normalized.reset_index(drop=True)
+
+
+def _normalize_row(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "Qte": _normalize_quantity(row.get("Qte", 1)),
+        "Symbole": str(row.get("Symbole", "")),
+        "Texte": str(row.get("Texte", "")),
+        "Valeur": str(row.get("Valeur", "")),
+        "Note": str(row.get("Note", "")),
+    }
+
+
+def _normalize_quantity(value: object) -> int:
+    try:
+        if value == "":
+            return 1
+        return max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return 1
 
 
 def _dataframe_to_rows(data: pd.DataFrame) -> list[dict[str, object]]:
-    return data.fillna("").to_dict("records")
+    return _normalize_editor_dataframe(data).to_dict("records")
 
 
 def _rows_to_items(rows: list[dict[str, object]]) -> list[LabelItem]:
