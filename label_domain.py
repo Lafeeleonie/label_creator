@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import tomllib
 from dataclasses import dataclass, fields
@@ -12,6 +13,8 @@ from label_pdf import LabelItem, LabelSheetSettings, SYMBOL_LABELS
 
 
 CONFIG_PATH = Path(__file__).with_name("config.toml")
+AUTOSAVE_PATH = Path(__file__).with_name(".tmp") / "autosave.json"
+AUTOSAVE_VERSION = 1
 
 PAGE_FORMATS_MM = {
     "A4": (210.0, 297.0),
@@ -127,6 +130,12 @@ class AutoLayout:
     extra_height_mm: float
 
 
+@dataclass(frozen=True)
+class AutosaveDraft:
+    rows: list[dict[str, object]]
+    settings: dict[str, object]
+
+
 def load_app_defaults(path: Path = CONFIG_PATH) -> AppDefaults:
     with path.open("rb") as config_file:
         raw = tomllib.load(config_file)
@@ -167,6 +176,40 @@ def load_app_defaults(path: Path = CONFIG_PATH) -> AppDefaults:
         skip_slots=_int_value(defaults.get("skip_slots"), 0),
         default_rows=[normalize_row(row) for row in default_rows],
     )
+
+
+def load_autosave_draft(defaults: AppDefaults, path: Path = AUTOSAVE_PATH) -> AutosaveDraft:
+    raw = _read_autosave(path)
+    rows = raw.get("rows") if isinstance(raw, dict) else None
+    settings = raw.get("settings") if isinstance(raw, dict) else None
+
+    return AutosaveDraft(
+        rows=(
+            [normalize_row(row) for row in rows if isinstance(row, dict)]
+            if isinstance(rows, list)
+            else defaults.default_rows
+        ),
+        settings=dict(settings) if isinstance(settings, dict) else {},
+    )
+
+
+def save_autosave_draft(
+    rows: list[dict[str, object]],
+    settings: dict[str, object],
+    path: Path = AUTOSAVE_PATH,
+) -> None:
+    payload = {
+        "version": AUTOSAVE_VERSION,
+        "rows": [normalize_row(row) for row in rows],
+        "settings": dict(settings),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = path.with_suffix(".tmp")
+        temporary_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary_path.replace(path)
+    except OSError:
+        return
 
 
 def compute_auto_layout(
@@ -396,3 +439,13 @@ def _row_value(row: dict[str, object], *keys: str, default: object) -> object:
         if key in row:
             return row[key]
     return default
+
+
+def _read_autosave(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}

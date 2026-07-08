@@ -12,6 +12,8 @@ L'interface utilise un theme sombre par defaut.
 
 La quantite par defaut d'une ligne d'etiquette est `1`.
 
+Les lignes et les reglages courants sont sauvegardes automatiquement dans `.tmp/autosave.json`, un fichier local ignore par git.
+
 ### Lancement
 
 Double-cliquer sur `lancer_streamlit.bat`.
@@ -45,6 +47,8 @@ The number of rows and columns is computed automatically so only complete labels
 The interface uses a dark theme by default.
 
 The default quantity for a label row is `1`.
+
+Current rows and layout settings are automatically saved to `.tmp/autosave.json`, a local file ignored by git.
 
 ### Launch
 

@@ -16,6 +16,7 @@ importlib.reload(_label_domain)
 
 from label_domain import (
     AppDefaults,
+    AutosaveDraft,
     AutoLayout,
     EDITOR_COLUMNS,
     MarginDefaults,
@@ -23,19 +24,21 @@ from label_domain import (
     SYMBOL_BANK_GROUPS,
     compute_auto_layout,
     dataframe_to_rows,
-    default_rows_as_dataframe,
     delete_rows,
     label_to_symbol,
     load_app_defaults,
+    load_autosave_draft,
     normalize_editor_dataframe,
     normalize_row,
     rows_to_dataframe,
     rows_to_items,
+    save_autosave_draft,
 )
 from label_pdf import LabelSheetSettings, SYMBOL_LABELS, build_label_pdf, validate_layout
 
 
 APP_DEFAULTS = load_app_defaults()
+APP_DRAFT = load_autosave_draft(APP_DEFAULTS)
 DELETE_COLUMN = "Suppr."
 
 
@@ -43,9 +46,9 @@ def main() -> None:
     st.set_page_config(page_title="Editeur d'etiquettes", page_icon="label", layout="wide")
     _inject_css()
 
-    _ensure_editor_state(APP_DEFAULTS)
+    _ensure_editor_state(APP_DEFAULTS, APP_DRAFT)
 
-    layout = _sidebar_settings(APP_DEFAULTS)
+    layout = _sidebar_settings(APP_DEFAULTS, APP_DRAFT.settings)
     settings = layout.settings
 
     st.title("Editeur d'etiquettes atelier")
@@ -89,6 +92,7 @@ def main() -> None:
             },
         )
         current_rows = dataframe_to_rows(edited)
+        _save_current_draft(current_rows)
         _delete_rows_control(edited)
 
         items = rows_to_items(current_rows)
@@ -134,10 +138,11 @@ def main() -> None:
             st.info("Aucun PDF a afficher.")
 
 
-def _sidebar_settings(defaults: AppDefaults) -> AutoLayout:
+def _sidebar_settings(defaults: AppDefaults, saved_settings: dict[str, object]) -> AutoLayout:
     st.sidebar.header("Format")
     paper_options = list(PAGE_FORMATS_MM.keys())
-    paper_index = paper_options.index(defaults.page.format) if defaults.page.format in paper_options else 0
+    saved_paper = _saved_choice(saved_settings, "paper", defaults.page.format, paper_options)
+    paper_index = paper_options.index(saved_paper)
     paper = st.sidebar.selectbox("Papier", paper_options, index=paper_index)
     default_width, default_height = PAGE_FORMATS_MM[paper]
 
@@ -146,14 +151,14 @@ def _sidebar_settings(defaults: AppDefaults) -> AutoLayout:
             "Largeur page (mm)",
             min_value=20.0,
             max_value=500.0,
-            value=defaults.page.width_mm,
+            value=_saved_float(saved_settings, "page_width_mm", defaults.page.width_mm, 20.0, 500.0),
             step=1.0,
         )
         page_height = st.sidebar.number_input(
             "Hauteur page (mm)",
             min_value=20.0,
             max_value=700.0,
-            value=defaults.page.height_mm,
+            value=_saved_float(saved_settings, "page_height_mm", defaults.page.height_mm, 20.0, 700.0),
             step=1.0,
         )
     else:
@@ -164,28 +169,28 @@ def _sidebar_settings(defaults: AppDefaults) -> AutoLayout:
         "Largeur etiquette (mm)",
         min_value=5.0,
         max_value=200.0,
-        value=defaults.labels.width_mm,
+        value=_saved_float(saved_settings, "label_width_mm", defaults.labels.width_mm, 5.0, 200.0),
         step=0.5,
     )
     label_height = st.sidebar.number_input(
         "Hauteur etiquette (mm)",
         min_value=5.0,
         max_value=100.0,
-        value=defaults.labels.height_mm,
+        value=_saved_float(saved_settings, "label_height_mm", defaults.labels.height_mm, 5.0, 100.0),
         step=0.5,
     )
     gap_x = st.sidebar.number_input(
         "Espace horizontal (mm)",
         min_value=0.0,
         max_value=50.0,
-        value=defaults.labels.gap_x_mm,
+        value=_saved_float(saved_settings, "gap_x_mm", defaults.labels.gap_x_mm, 0.0, 50.0),
         step=0.1,
     )
     gap_y = st.sidebar.number_input(
         "Espace vertical (mm)",
         min_value=0.0,
         max_value=50.0,
-        value=defaults.labels.gap_y_mm,
+        value=_saved_float(saved_settings, "gap_y_mm", defaults.labels.gap_y_mm, 0.0, 50.0),
         step=0.1,
     )
 
@@ -194,28 +199,28 @@ def _sidebar_settings(defaults: AppDefaults) -> AutoLayout:
         "Marge haute (mm)",
         min_value=0.0,
         max_value=100.0,
-        value=defaults.margins.top_mm,
+        value=_saved_float(saved_settings, "margin_top_mm", defaults.margins.top_mm, 0.0, 100.0),
         step=0.5,
     )
     margin_right = st.sidebar.number_input(
         "Marge droite (mm)",
         min_value=0.0,
         max_value=100.0,
-        value=defaults.margins.right_mm,
+        value=_saved_float(saved_settings, "margin_right_mm", defaults.margins.right_mm, 0.0, 100.0),
         step=0.5,
     )
     margin_bottom = st.sidebar.number_input(
         "Marge basse (mm)",
         min_value=0.0,
         max_value=100.0,
-        value=defaults.margins.bottom_mm,
+        value=_saved_float(saved_settings, "margin_bottom_mm", defaults.margins.bottom_mm, 0.0, 100.0),
         step=0.5,
     )
     margin_left = st.sidebar.number_input(
         "Marge gauche (mm)",
         min_value=0.0,
         max_value=100.0,
-        value=defaults.margins.left_mm,
+        value=_saved_float(saved_settings, "margin_left_mm", defaults.margins.left_mm, 0.0, 100.0),
         step=0.5,
     )
 
@@ -253,22 +258,34 @@ def _sidebar_settings(defaults: AppDefaults) -> AutoLayout:
         "Cases deja utilisees",
         min_value=0,
         max_value=max(0, preview_layout.settings.capacity_per_page - 1),
-        value=min(defaults.skip_slots, max(0, preview_layout.settings.capacity_per_page - 1)),
+        value=_saved_int(
+            saved_settings,
+            "skip_slots",
+            defaults.skip_slots,
+            0,
+            max(0, preview_layout.settings.capacity_per_page - 1),
+        ),
         step=1,
     )
 
     st.sidebar.header("Style")
-    show_border = st.sidebar.checkbox("Contour", value=defaults.style.show_border)
-    cut_marks = st.sidebar.checkbox("Reperes de coupe", value=defaults.style.cut_marks)
+    show_border = st.sidebar.checkbox(
+        "Contour",
+        value=_saved_bool(saved_settings, "show_border", defaults.style.show_border),
+    )
+    cut_marks = st.sidebar.checkbox(
+        "Reperes de coupe",
+        value=_saved_bool(saved_settings, "cut_marks", defaults.style.cut_marks),
+    )
     font_scale = st.sidebar.slider(
         "Taille du texte",
         min_value=0.75,
         max_value=1.35,
-        value=defaults.style.font_scale,
+        value=_saved_float(saved_settings, "font_scale", defaults.style.font_scale, 0.75, 1.35),
         step=0.05,
     )
 
-    return _compute_layout_or_default(
+    layout = _compute_layout_or_default(
         defaults=defaults,
         page_width=float(page_width),
         page_height=float(page_height),
@@ -283,6 +300,21 @@ def _sidebar_settings(defaults: AppDefaults) -> AutoLayout:
         font_scale=float(font_scale),
         show_error=False,
     )
+    st.session_state.autosave_settings = _autosave_settings(
+        paper=paper,
+        page_width=float(page_width),
+        page_height=float(page_height),
+        label_width=float(label_width),
+        label_height=float(label_height),
+        margins=margins,
+        gap_x=float(gap_x),
+        gap_y=float(gap_y),
+        skip_slots=int(skip_slots),
+        show_border=bool(show_border),
+        cut_marks=bool(cut_marks),
+        font_scale=float(font_scale),
+    )
+    return layout
 
 
 def _compute_layout_or_default(
@@ -368,9 +400,9 @@ def _append_symbol_row(symbol: str) -> None:
     _reset_editor_widget()
 
 
-def _ensure_editor_state(defaults: AppDefaults) -> None:
+def _ensure_editor_state(defaults: AppDefaults, draft: AutosaveDraft) -> None:
     if "labels_df" not in st.session_state:
-        st.session_state.labels_df = default_rows_as_dataframe(defaults)
+        st.session_state.labels_df = rows_to_dataframe(draft.rows)
     if "editor_version" not in st.session_state:
         st.session_state.editor_version = 0
 
@@ -454,7 +486,9 @@ def _delete_rows_control(edited_data: pd.DataFrame) -> None:
         disabled=not selected_rows,
         width="stretch",
     ):
-        st.session_state.labels_df = rows_to_dataframe(delete_rows(rows, selected_rows))
+        rows = delete_rows(rows, selected_rows)
+        st.session_state.labels_df = rows_to_dataframe(rows)
+        _save_current_draft(rows)
         _reset_editor_widget()
         st.rerun()
 
@@ -464,6 +498,96 @@ def _selected_delete_rows(data: pd.DataFrame) -> list[int]:
         return []
     selected = data[DELETE_COLUMN].fillna(False).astype(bool)
     return [int(index) for index, is_selected in enumerate(selected) if is_selected]
+
+
+def _save_current_draft(rows: list[dict[str, object]]) -> None:
+    save_autosave_draft(rows, _current_autosave_settings())
+
+
+def _current_autosave_settings() -> dict[str, object]:
+    settings = st.session_state.get("autosave_settings")
+    return dict(settings) if isinstance(settings, dict) else {}
+
+
+def _autosave_settings(
+    *,
+    paper: str,
+    page_width: float,
+    page_height: float,
+    label_width: float,
+    label_height: float,
+    margins: MarginDefaults,
+    gap_x: float,
+    gap_y: float,
+    skip_slots: int,
+    show_border: bool,
+    cut_marks: bool,
+    font_scale: float,
+) -> dict[str, object]:
+    return {
+        "paper": paper,
+        "page_width_mm": page_width,
+        "page_height_mm": page_height,
+        "label_width_mm": label_width,
+        "label_height_mm": label_height,
+        "margin_top_mm": margins.top_mm,
+        "margin_right_mm": margins.right_mm,
+        "margin_bottom_mm": margins.bottom_mm,
+        "margin_left_mm": margins.left_mm,
+        "gap_x_mm": gap_x,
+        "gap_y_mm": gap_y,
+        "skip_slots": skip_slots,
+        "show_border": show_border,
+        "cut_marks": cut_marks,
+        "font_scale": font_scale,
+    }
+
+
+def _saved_choice(
+    saved_settings: dict[str, object],
+    key: str,
+    fallback: str,
+    options: list[str],
+) -> str:
+    value = str(saved_settings.get(key, fallback))
+    return value if value in options else fallback if fallback in options else options[0]
+
+
+def _saved_float(
+    saved_settings: dict[str, object],
+    key: str,
+    fallback: float,
+    minimum: float,
+    maximum: float,
+) -> float:
+    try:
+        value = float(saved_settings.get(key, fallback))
+    except (TypeError, ValueError):
+        value = float(fallback)
+    return min(max(value, minimum), maximum)
+
+
+def _saved_int(
+    saved_settings: dict[str, object],
+    key: str,
+    fallback: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        value = int(saved_settings.get(key, fallback))
+    except (TypeError, ValueError):
+        value = int(fallback)
+    return min(max(value, minimum), maximum)
+
+
+def _saved_bool(saved_settings: dict[str, object], key: str, fallback: bool) -> bool:
+    value = saved_settings.get(key, fallback)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _preview_height(settings: LabelSheetSettings) -> int:
