@@ -20,6 +20,10 @@ http://127.0.0.1:8585
 
 Le PDF est genere avec ReportLab en millimetres. Dans la fenetre d'impression, choisir `Taille reelle`, `100 %` ou `Aucune mise a l'echelle` pour conserver les dimensions des etiquettes.
 
+L'aperçu integre le PDF reel genere par l'application.
+
 ## Symboles
 
 L'interface contient une banque de symboles electroniques et une banque de vis. Les symboles de vis sont rendus simplement sous la forme `M2`, `M3`, `M4`, etc.
+
+Sur les etiquettes, le symbole est place au-dessus du texte.

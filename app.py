@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime
-from html import escape
 
 import pandas as pd
 import streamlit as st
 
-from label_pdf import LabelItem, LabelSheetSettings, SYMBOL_LABELS, TEXT_SYMBOLS, build_label_pdf, validate_layout
+from label_pdf import LabelItem, LabelSheetSettings, SYMBOL_LABELS, build_label_pdf, validate_layout
 
 
 PAGE_FORMATS_MM = {
@@ -53,8 +53,7 @@ def main() -> None:
     st.set_page_config(page_title="Editeur d'etiquettes", page_icon="label", layout="wide")
     _inject_css()
 
-    if "rows" not in st.session_state:
-        st.session_state.rows = DEFAULT_ROWS
+    _ensure_editor_state()
 
     settings = _sidebar_settings()
 
@@ -66,6 +65,7 @@ def main() -> None:
         st.subheader("Etiquettes")
         edited = st.data_editor(
             pd.DataFrame(st.session_state.rows),
+            key="labels_editor",
             hide_index=True,
             num_rows="dynamic",
             width="stretch",
@@ -81,7 +81,7 @@ def main() -> None:
                 "Note": st.column_config.TextColumn("Note", width="large"),
             },
         )
-        st.session_state.rows = edited.fillna("").to_dict("records")
+        st.session_state.rows = _dataframe_to_rows(edited)
 
         items = _rows_to_items(st.session_state.rows)
         errors = validate_layout(settings)
@@ -113,8 +113,11 @@ def main() -> None:
         )
 
     with preview_col:
-        st.subheader("Apercu")
-        st.iframe(_preview_html(items, settings), height=_preview_height(settings), width="stretch")
+        st.subheader("Apercu PDF")
+        if pdf_bytes:
+            st.iframe(_pdf_data_url(pdf_bytes), height=_preview_height(settings), width="stretch")
+        else:
+            st.info("Aucun PDF a afficher.")
 
 
 def _sidebar_settings() -> LabelSheetSettings:
@@ -185,7 +188,8 @@ def _symbol_button_grid(symbols: list[str], column_count: int) -> None:
 
 
 def _append_symbol_row(symbol: str) -> None:
-    st.session_state.rows.append(
+    rows = list(st.session_state.rows)
+    rows.append(
         {
             "Qte": 1,
             "Symbole": SYMBOL_LABELS[symbol],
@@ -194,6 +198,17 @@ def _append_symbol_row(symbol: str) -> None:
             "Note": "",
         }
     )
+    st.session_state.rows = rows
+    st.session_state.pop("labels_editor", None)
+
+
+def _ensure_editor_state() -> None:
+    if "rows" not in st.session_state:
+        st.session_state.rows = [row.copy() for row in DEFAULT_ROWS]
+
+
+def _dataframe_to_rows(data: pd.DataFrame) -> list[dict[str, object]]:
+    return data.fillna("").to_dict("records")
 
 
 def _rows_to_items(rows: list[dict[str, object]]) -> list[LabelItem]:
@@ -230,192 +245,9 @@ def _preview_height(settings: LabelSheetSettings) -> int:
     return int(min(760, max(420, 520 * ratio)))
 
 
-def _preview_html(items: list[LabelItem], settings: LabelSheetSettings) -> str:
-    labels = _expanded_preview_items(items)
-    page_w = settings.page_width_mm
-    page_h = settings.page_height_mm
-    label_w = settings.label_width_mm
-    label_h = settings.label_height_mm
-
-    slots: list[LabelItem | None] = [None] * settings.skip_slots + labels
-    slots = slots[: settings.capacity_per_page]
-
-    cells: list[str] = []
-    for slot_index, item in enumerate(slots):
-        if item is None:
-            continue
-        row = slot_index // settings.columns
-        col = slot_index % settings.columns
-        left = (settings.margin_left_mm + col * (settings.label_width_mm + settings.gap_x_mm)) / page_w * 100
-        top = (settings.margin_top_mm + row * (settings.label_height_mm + settings.gap_y_mm)) / page_h * 100
-        width = label_w / page_w * 100
-        height = label_h / page_h * 100
-        has_symbol = item.symbol != "none"
-        has_text = bool(item.text or item.value or item.note)
-        classes = ["label"]
-        if has_symbol and not has_text:
-            classes.append("symbol-only")
-        elif not has_symbol:
-            classes.append("text-only")
-
-        symbol_html = f'<div class="symbol">{_symbol_svg(item.symbol)}</div>' if has_symbol else ""
-        copy_html = ""
-        if has_text:
-            copy_html = f"""
-                <div class="copy">
-                    <strong>{escape(item.text)}</strong>
-                    <span>{escape(item.value)}</span>
-                    <small>{escape(item.note)}</small>
-                </div>
-            """
-        cells.append(
-            f"""
-            <div class="{' '.join(classes)}" style="left:{left:.4f}%;top:{top:.4f}%;width:{width:.4f}%;height:{height:.4f}%;">
-                {symbol_html}
-                {copy_html}
-            </div>
-            """
-        )
-
-    empty_state = "<div class='empty'>Aucune etiquette</div>" if not cells else ""
-    border = "1px solid #6d6257" if settings.show_border else "1px dashed #514942"
-
-    return f"""
-    <!doctype html>
-    <html lang="fr">
-    <head>
-        <meta charset="utf-8" />
-        <style>
-            :root {{
-                color-scheme: dark;
-                font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            }}
-            body {{
-                margin: 0;
-                background: #11100f;
-                color: #f4f1ea;
-            }}
-            .sheet {{
-                position: relative;
-                width: min(100%, 620px);
-                aspect-ratio: {page_w} / {page_h};
-                margin: 0 auto;
-                background: #161412;
-                border: 1px solid #3b352f;
-                box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
-                overflow: hidden;
-            }}
-            .label {{
-                position: absolute;
-                display: grid;
-                grid-template-columns: minmax(10px, 30%) minmax(0, 1fr);
-                align-items: center;
-                gap: 4%;
-                border: {border};
-                padding: 4%;
-                box-sizing: border-box;
-                background: #24201c;
-            }}
-            .label.text-only {{
-                grid-template-columns: minmax(0, 1fr);
-            }}
-            .label.symbol-only {{
-                grid-template-columns: minmax(0, 1fr);
-                place-items: center;
-                padding: 5%;
-            }}
-            .label.symbol-only .symbol {{
-                width: 82%;
-                height: 82%;
-                display: grid;
-                place-items: center;
-            }}
-            .symbol svg {{
-                display: block;
-                width: 100%;
-                height: 100%;
-                color: #f4f1ea;
-            }}
-            .copy {{
-                min-width: 0;
-                display: flex;
-                flex-direction: column;
-                line-height: 1.08;
-                overflow: hidden;
-            }}
-            strong, span, small {{
-                display: block;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }}
-            strong {{
-                font-size: clamp(7px, 1.2vw, 13px);
-            }}
-            span {{
-                margin-top: 2px;
-                font-size: clamp(6px, 1vw, 11px);
-            }}
-            small {{
-                margin-top: 2px;
-                color: #b9b1a6;
-                font-size: clamp(5px, 0.85vw, 9px);
-            }}
-            .empty {{
-                position: absolute;
-                inset: 0;
-                display: grid;
-                place-items: center;
-                color: #a9a29a;
-                font-size: 14px;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="sheet">{empty_state}{''.join(cells)}</div>
-    </body>
-    </html>
-    """
-
-
-def _expanded_preview_items(items: list[LabelItem]) -> list[LabelItem]:
-    expanded: list[LabelItem] = []
-    for item in items:
-        expanded.extend([item] * max(0, item.quantity))
-        if len(expanded) >= 120:
-            break
-    return expanded
-
-
-def _symbol_svg(symbol: str) -> str:
-    if symbol in TEXT_SYMBOLS:
-        label = escape(TEXT_SYMBOLS[symbol])
-        return f"""
-        <svg viewBox="0 0 56 56" aria-hidden="true">
-            <text x="28" y="30" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="currentColor">{label}</text>
-        </svg>
-        """
-
-    strokes = {
-        "none": "",
-        "resistor": '<polyline points="5,25 10,25 14,12 20,38 26,12 32,38 38,12 44,38 48,25 55,25" />',
-        "capacitor": '<path d="M5 25h20M25 8v34M35 8v34M35 25h20" />',
-        "electrolytic": '<path d="M5 25h20M25 8v34M35 8v34M35 25h20" /><text x="13" y="16" font-size="13" font-family="Arial" font-weight="700">+</text>',
-        "diode": '<path d="M5 25h14M39 25h16M19 10v30l20-15zM40 9v32" />',
-        "led": '<path d="M5 25h14M39 25h16M19 10v30l20-15zM40 9v32M37 6l12-12M49-6l-3 10M49-6l-10 3M28 6l12-12M40-6l-3 10M40-6l-10 3" />',
-        "transistor_npn": '<circle cx="28" cy="28" r="21" /><path d="M7 28h16M23 13v30M23 19l20-12M23 37l20 12M43 49l-6-10M43 49l-11-1" />',
-        "ground": '<path d="M28 5v22M12 27h32M17 35h22M22 43h12" />',
-        "switch": '<path d="M5 28h12M39 28h12M21 25l20-12" /><circle cx="19" cy="28" r="3" /><circle cx="37" cy="28" r="3" />',
-        "inductor": '<path d="M4 28h8M12 28a6 6 0 0 1 12 0M24 28a6 6 0 0 1 12 0M36 28a6 6 0 0 1 12 0M48 28h4" />',
-        "ic": '<rect x="15" y="9" width="28" height="36" rx="2" /><path d="M6 16h9M6 26h9M6 36h9M43 16h9M43 26h9M43 36h9" /><circle cx="22" cy="17" r="2" />',
-        "battery": '<path d="M5 28h12M17 10v36M27 18v20M27 28h9M36 10v36M46 18v20M46 28h9" />',
-        "fuse": '<path d="M5 28h12M39 28h12M17 17h22v22H17zM22 28h12" />',
-    }
-    return f"""
-    <svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        {strokes.get(symbol, strokes["none"])}
-    </svg>
-    """
+def _pdf_data_url(pdf_bytes: bytes) -> str:
+    encoded_pdf = base64.b64encode(pdf_bytes).decode("ascii")
+    return f"data:application/pdf;base64,{encoded_pdf}#toolbar=0&navpanes=0&view=FitH"
 
 
 def _inject_css() -> None:

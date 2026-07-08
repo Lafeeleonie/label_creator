@@ -200,7 +200,6 @@ def _draw_label(
         pdf.setLineWidth(0.35)
         pdf.rect(x, y, width, height, stroke=1, fill=0)
 
-    width_mm = width / mm
     height_mm = height / mm
     padding = _label_padding(width, height)
     has_symbol = item.symbol != "none"
@@ -219,17 +218,8 @@ def _draw_label(
         pdf.restoreState()
         return
 
-    if has_symbol:
-        symbol_ratio = 0.30 if width_mm <= 18 else 0.24
-        symbol_size = max(1, min(height - 2 * padding, width * symbol_ratio, 12 * mm))
-        symbol_x = x + padding
-        symbol_y = y + (height - symbol_size) / 2
-        _draw_symbol(pdf, item.symbol, symbol_x, symbol_y, symbol_size, symbol_size)
-        text_x = symbol_x + symbol_size + min(padding, 1.0 * mm)
-    else:
-        text_x = x + padding
-
-    text_width = max(1, x + width - padding - text_x)
+    text_x = x + padding
+    text_width = max(1, width - 2 * padding)
     base_size = min(11.5, max(4.0, height_mm * 0.50)) * settings.font_scale
     title_size = base_size
     value_size = max(3.8, base_size * 0.82)
@@ -248,24 +238,40 @@ def _draw_label(
     if not lines:
         lines.append(("Helvetica", "", value_size))
 
-    max_text_height = max(1, height - 2 * padding)
-    line_heights = [size * 1.12 for _, _, size in lines]
-    total_height = sum(line_heights)
-    if total_height > max_text_height:
-        text_scale = max(0.68, max_text_height / total_height)
-        lines = [(font_name, text, max(3.1, size * text_scale)) for font_name, text, size in lines]
-        line_heights = [size * 1.12 for _, _, size in lines]
-        total_height = sum(line_heights)
-
-    cursor_y = y + (height + total_height) / 2
-
     pdf.setFillColor(colors.HexColor("#111827"))
-    for (font_name, text, size), line_height in zip(lines, line_heights):
-        cursor_y -= line_height
-        fitted_text = _ellipsize(text, font_name, size, text_width)
-        fitted_size = _fit_font_size(fitted_text, font_name, size, text_width, min_size=4.5)
-        pdf.setFont(font_name, fitted_size)
-        pdf.drawString(text_x, cursor_y + (line_height - fitted_size) * 0.25, fitted_text)
+    available_height = max(1, height - 2 * padding)
+    if has_symbol:
+        gap = min(0.45 * mm, available_height * 0.08)
+        symbol_size = max(1, min(width - 2 * padding, available_height * 0.42, 5.2 * mm))
+        text_height = max(1, available_height - symbol_size - gap)
+        lines = _fit_lines_to_height(lines, text_height, min_size=3.0)
+        line_heights = _line_heights(lines)
+        total_text_height = sum(line_heights)
+        total_block_height = symbol_size + gap + total_text_height
+        block_top = y + (height + total_block_height) / 2
+
+        _draw_symbol(
+            pdf,
+            item.symbol,
+            x + (width - symbol_size) / 2,
+            block_top - symbol_size,
+            symbol_size,
+            symbol_size,
+        )
+        _draw_text_lines(
+            pdf,
+            text_x,
+            block_top - symbol_size - gap,
+            text_width,
+            lines,
+            line_heights,
+        )
+    else:
+        lines = _fit_lines_to_height(lines, available_height, min_size=3.0)
+        line_heights = _line_heights(lines)
+        total_text_height = sum(line_heights)
+        text_top = y + (height + total_text_height) / 2
+        _draw_text_lines(pdf, text_x, text_top, text_width, lines, line_heights)
 
     pdf.restoreState()
 
@@ -274,6 +280,46 @@ def _label_padding(width: float, height: float) -> float:
     small_side_mm = min(width / mm, height / mm)
     padding_mm = min(2.2, max(0.55, small_side_mm * 0.08))
     return padding_mm * mm
+
+
+def _line_heights(lines: list[tuple[str, str, float]]) -> list[float]:
+    return [size * 1.12 for _, _, size in lines]
+
+
+def _fit_lines_to_height(
+    lines: list[tuple[str, str, float]],
+    max_height: float,
+    min_size: float,
+) -> list[tuple[str, str, float]]:
+    line_heights = _line_heights(lines)
+    total_height = sum(line_heights)
+    if total_height <= max_height:
+        return lines
+
+    text_scale = max(0.58, max_height / total_height)
+    return [(font_name, text, max(min_size, size * text_scale)) for font_name, text, size in lines]
+
+
+def _draw_text_lines(
+    pdf: canvas.Canvas,
+    x: float,
+    top_y: float,
+    width: float,
+    lines: list[tuple[str, str, float]],
+    line_heights: list[float],
+) -> None:
+    cursor_y = top_y
+    for (font_name, text, size), line_height in zip(lines, line_heights):
+        cursor_y -= line_height
+        fitted_text = _ellipsize(text, font_name, size, width)
+        fitted_size = _fit_font_size(fitted_text, font_name, size, width, min_size=3.0)
+        text_width = stringWidth(fitted_text, font_name, fitted_size)
+        pdf.setFont(font_name, fitted_size)
+        pdf.drawString(
+            x + (width - text_width) / 2,
+            cursor_y + (line_height - fitted_size) * 0.25,
+            fitted_text,
+        )
 
 
 def _draw_cut_marks(pdf: canvas.Canvas, x: float, y: float, width: float, height: float) -> None:
