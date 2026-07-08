@@ -370,7 +370,7 @@ def _symbol_bank() -> None:
     tabs = st.tabs(list(SYMBOL_BANK_GROUPS.keys()))
     for tab, (group_name, symbols) in zip(tabs, SYMBOL_BANK_GROUPS.items()):
         with tab:
-            _symbol_button_grid(symbols, _symbol_column_count(group_name))
+            _symbol_button_grid(group_name, symbols, _symbol_column_count(group_name))
 
 
 def _symbol_column_count(group_name: str) -> int:
@@ -379,13 +379,13 @@ def _symbol_column_count(group_name: str) -> int:
     return 3
 
 
-def _symbol_button_grid(symbols: list[str], column_count: int) -> None:
+def _symbol_button_grid(group_name: str, symbols: list[str], column_count: int) -> None:
     for start in range(0, len(symbols), column_count):
         columns = st.columns(column_count)
-        for column, symbol in zip(columns, symbols[start : start + column_count]):
+        for offset, (column, symbol) in enumerate(zip(columns, symbols[start : start + column_count])):
             label = SYMBOL_LABELS[symbol]
             with column:
-                if st.button(label, key=f"bank_{symbol}", width="stretch"):
+                if st.button(label, key=f"bank_{group_name}_{start + offset}_{symbol}", width="stretch"):
                     _append_symbol_row(symbol)
 
 
