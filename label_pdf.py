@@ -25,13 +25,21 @@ SYMBOL_LABELS = {
     "battery": "Pile",
     "fuse": "Fusible",
     "screw_m1_6": "M1.6",
+    "screw_m1_6_con": "M1.6 con",
     "screw_m2": "M2",
+    "screw_m2_con": "M2 con",
     "screw_m2_5": "M2.5",
+    "screw_m2_5_con": "M2.5 con",
     "screw_m3": "M3",
+    "screw_m3_con": "M3 con",
     "screw_m4": "M4",
+    "screw_m4_con": "M4 con",
     "screw_m5": "M5",
+    "screw_m5_con": "M5 con",
     "screw_m6": "M6",
+    "screw_m6_con": "M6 con",
     "screw_m8": "M8",
+    "screw_m8_con": "M8 con",
 }
 
 TEXT_SYMBOLS = {

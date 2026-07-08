@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import base64
+import importlib
 from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+
+import label_domain as _label_domain
+import label_pdf as _label_pdf
+
+
+importlib.reload(_label_pdf)
+importlib.reload(_label_domain)
 
 from label_domain import (
     AppDefaults,
@@ -15,6 +23,7 @@ from label_domain import (
     compute_auto_layout,
     dataframe_to_rows,
     default_rows_as_dataframe,
+    delete_rows,
     label_to_symbol,
     load_app_defaults,
     normalize_editor_dataframe,
@@ -72,6 +81,7 @@ def main() -> None:
             },
         )
         current_rows = dataframe_to_rows(edited)
+        _delete_rows_control(current_rows)
 
         items = rows_to_items(current_rows)
         errors = validate_layout(settings)
@@ -348,6 +358,7 @@ def _append_symbol_row(symbol: str) -> None:
     )
     st.session_state.labels_df = rows_to_dataframe(rows)
     _reset_editor_widget()
+    _reset_delete_widget()
 
 
 def _ensure_editor_state(defaults: AppDefaults) -> None:
@@ -355,14 +366,24 @@ def _ensure_editor_state(defaults: AppDefaults) -> None:
         st.session_state.labels_df = default_rows_as_dataframe(defaults)
     if "editor_version" not in st.session_state:
         st.session_state.editor_version = 0
+    if "delete_version" not in st.session_state:
+        st.session_state.delete_version = 0
 
 
 def _editor_key() -> str:
     return f"labels_editor_{st.session_state.editor_version}"
 
 
+def _delete_key() -> str:
+    return f"delete_rows_{st.session_state.delete_version}"
+
+
 def _reset_editor_widget() -> None:
     st.session_state.editor_version += 1
+
+
+def _reset_delete_widget() -> None:
+    st.session_state.delete_version += 1
 
 
 def _commit_editor_changes(editor_key: str) -> None:
@@ -396,6 +417,38 @@ def _current_editor_dataframe(editor_key: str | None = None) -> pd.DataFrame:
         base_df = pd.concat([base_df, pd.DataFrame(additions)], ignore_index=True)
 
     return normalize_editor_dataframe(base_df)
+
+
+def _delete_rows_control(rows: list[dict[str, object]]) -> None:
+    if not rows:
+        return
+
+    selected_rows = st.multiselect(
+        "Lignes a supprimer",
+        options=list(range(len(rows))),
+        format_func=lambda index: _delete_row_label(index, rows[index]),
+        key=_delete_key(),
+        placeholder="Selectionner des lignes",
+    )
+    if st.button(
+        "Supprimer les lignes selectionnees",
+        icon=":material/delete:",
+        disabled=not selected_rows,
+        width="stretch",
+    ):
+        st.session_state.labels_df = rows_to_dataframe(delete_rows(rows, selected_rows))
+        _reset_editor_widget()
+        _reset_delete_widget()
+        st.rerun()
+
+
+def _delete_row_label(index: int, row: dict[str, object]) -> str:
+    symbol = str(row.get("Symbole") or "Aucun").strip()
+    text = str(row.get("Texte") or "").strip()
+    value = str(row.get("Valeur") or "").strip()
+    note = str(row.get("Note") or "").strip()
+    details = " - ".join(part for part in [symbol, text, value, note] if part)
+    return f"{index + 1}. x{row.get('Qte', 1)} {details or 'ligne vide'}"
 
 
 def _preview_height(settings: LabelSheetSettings) -> int:

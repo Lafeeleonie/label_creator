@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -38,13 +38,21 @@ SYMBOL_BANK_GROUPS = {
     ],
     "Vis": [
         "screw_m1_6",
+        "screw_m1_6_con",
         "screw_m2",
+        "screw_m2_con",
         "screw_m2_5",
+        "screw_m2_5_con",
         "screw_m3",
+        "screw_m3_con",
         "screw_m4",
+        "screw_m4_con",
         "screw_m5",
+        "screw_m5_con",
         "screw_m6",
+        "screw_m6_con",
         "screw_m8",
+        "screw_m8_con",
     ],
 }
 
@@ -182,23 +190,31 @@ def compute_auto_layout(
 
     capacity = columns * rows
     bounded_skip_slots = min(max(0, int(skip_slots)), max(0, capacity - 1))
+    settings_values = {
+        "page_width_mm": float(page_width_mm),
+        "page_height_mm": float(page_height_mm),
+        "label_width_mm": float(label_width_mm),
+        "label_height_mm": float(label_height_mm),
+        "columns": int(columns),
+        "rows": int(rows),
+        "margin_left_mm": margin_left,
+        "margin_top_mm": margin_top,
+        "gap_x_mm": float(gap_x_mm),
+        "gap_y_mm": float(gap_y_mm),
+        "skip_slots": bounded_skip_slots,
+        "show_border": bool(show_border),
+        "cut_marks": bool(cut_marks),
+        "font_scale": float(font_scale),
+        "margin_right_mm": margin_right,
+        "margin_bottom_mm": margin_bottom,
+    }
+    supported_settings = {field.name for field in fields(LabelSheetSettings)}
     settings = LabelSheetSettings(
-        page_width_mm=float(page_width_mm),
-        page_height_mm=float(page_height_mm),
-        label_width_mm=float(label_width_mm),
-        label_height_mm=float(label_height_mm),
-        columns=int(columns),
-        rows=int(rows),
-        margin_left_mm=margin_left,
-        margin_top_mm=margin_top,
-        gap_x_mm=float(gap_x_mm),
-        gap_y_mm=float(gap_y_mm),
-        margin_right_mm=margin_right,
-        margin_bottom_mm=margin_bottom,
-        skip_slots=bounded_skip_slots,
-        show_border=bool(show_border),
-        cut_marks=bool(cut_marks),
-        font_scale=float(font_scale),
+        **{
+            key: value
+            for key, value in settings_values.items()
+            if key in supported_settings
+        }
     )
 
     return AutoLayout(
@@ -255,6 +271,15 @@ def normalize_quantity(value: object) -> int:
 
 def dataframe_to_rows(data: pd.DataFrame) -> list[dict[str, object]]:
     return normalize_editor_dataframe(data).to_dict("records")
+
+
+def delete_rows(rows: list[dict[str, object]], row_indices: list[int]) -> list[dict[str, object]]:
+    indices_to_delete = {int(index) for index in row_indices}
+    return [
+        normalize_row(row)
+        for index, row in enumerate(rows)
+        if index not in indices_to_delete
+    ]
 
 
 def rows_to_items(rows: list[dict[str, object]]) -> list[LabelItem]:
