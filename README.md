@@ -4,6 +4,8 @@ Interface Streamlit pour composer des etiquettes d'atelier electronique et expor
 
 Par defaut, le format est regle sur des etiquettes de `12,5 x 10 mm`, organisees sur A4 en `16 x 29` etiquettes sans espace.
 
+L'interface utilise un theme sombre par defaut.
+
 ## Lancement
 
 Double-cliquer sur `lancer_streamlit.bat`.
@@ -21,7 +23,3 @@ Le PDF est genere avec ReportLab en millimetres. Dans la fenetre d'impression, c
 ## Symboles
 
 L'interface contient une banque de symboles electroniques et une banque de vis. Les symboles de vis sont rendus simplement sous la forme `M2`, `M3`, `M4`, etc.
-
-## Git
-
-`instruction.md` et `.venv/` sont ignores par Git.

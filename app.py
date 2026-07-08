@@ -278,7 +278,7 @@ def _preview_html(items: list[LabelItem], settings: LabelSheetSettings) -> str:
         )
 
     empty_state = "<div class='empty'>Aucune etiquette</div>" if not cells else ""
-    border = "1px solid #98a2b3" if settings.show_border else "1px dashed #d0d5dd"
+    border = "1px solid #6d6257" if settings.show_border else "1px dashed #514942"
 
     return f"""
     <!doctype html>
@@ -287,22 +287,22 @@ def _preview_html(items: list[LabelItem], settings: LabelSheetSettings) -> str:
         <meta charset="utf-8" />
         <style>
             :root {{
-                color-scheme: light;
+                color-scheme: dark;
                 font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             }}
             body {{
                 margin: 0;
-                background: #f6f7f9;
-                color: #111827;
+                background: #11100f;
+                color: #f4f1ea;
             }}
             .sheet {{
                 position: relative;
                 width: min(100%, 620px);
                 aspect-ratio: {page_w} / {page_h};
                 margin: 0 auto;
-                background: #ffffff;
-                border: 1px solid #d0d5dd;
-                box-shadow: 0 18px 50px rgba(17, 24, 39, 0.12);
+                background: #161412;
+                border: 1px solid #3b352f;
+                box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38);
                 overflow: hidden;
             }}
             .label {{
@@ -314,7 +314,7 @@ def _preview_html(items: list[LabelItem], settings: LabelSheetSettings) -> str:
                 border: {border};
                 padding: 4%;
                 box-sizing: border-box;
-                background: #fff;
+                background: #24201c;
             }}
             .label.text-only {{
                 grid-template-columns: minmax(0, 1fr);
@@ -334,7 +334,7 @@ def _preview_html(items: list[LabelItem], settings: LabelSheetSettings) -> str:
                 display: block;
                 width: 100%;
                 height: 100%;
-                color: #111827;
+                color: #f4f1ea;
             }}
             .copy {{
                 min-width: 0;
@@ -358,7 +358,7 @@ def _preview_html(items: list[LabelItem], settings: LabelSheetSettings) -> str:
             }}
             small {{
                 margin-top: 2px;
-                color: #667085;
+                color: #b9b1a6;
                 font-size: clamp(5px, 0.85vw, 9px);
             }}
             .empty {{
@@ -366,7 +366,7 @@ def _preview_html(items: list[LabelItem], settings: LabelSheetSettings) -> str:
                 inset: 0;
                 display: grid;
                 place-items: center;
-                color: #667085;
+                color: #a9a29a;
                 font-size: 14px;
             }}
         </style>
@@ -422,33 +422,118 @@ def _inject_css() -> None:
     st.markdown(
         """
         <style>
-            .stApp {
-                background: #f6f7f9;
+            :root {
+                color-scheme: dark;
+            }
+            html,
+            body,
+            .stApp,
+            [data-testid="stApp"],
+            [data-testid="stAppViewContainer"],
+            [data-testid="stMain"],
+            [data-testid="stMainBlockContainer"],
+            section.main,
+            .main {
+                background: #11100f !important;
+                color: #f4f1ea !important;
+            }
+            .block-container {
+                background: transparent !important;
+                color: #f4f1ea !important;
             }
             h1, h2, h3 {
                 letter-spacing: 0;
+                color: #f4f1ea !important;
+            }
+            p, label, span, div {
+                border-color: #3b352f;
             }
             [data-testid="stSidebar"] {
-                border-right: 1px solid #e4e7ec;
+                background: #171512 !important;
+                border-right: 1px solid #3b352f !important;
             }
-            div[data-testid="stMetric"] {
-                background: #ffffff;
-                border: 1px solid #e4e7ec;
+            [data-testid="stSidebar"] * {
+                color: #f4f1ea !important;
+            }
+            [data-testid="stHeader"] {
+                background: rgba(17, 16, 15, 0.92) !important;
+                border-bottom: 1px solid rgba(59, 53, 47, 0.65) !important;
+            }
+            [data-testid="stToolbar"] {
+                color: #a9a29a !important;
+            }
+            .stTabs [data-baseweb="tab-list"] {
+                gap: 0.35rem;
+                border-bottom: 1px solid #3b352f;
+            }
+            .stTabs [data-baseweb="tab"] {
+                background: #1c1a18 !important;
+                border: 1px solid #3b352f !important;
+                border-bottom: 0 !important;
+                border-radius: 8px 8px 0 0;
+                color: #d8d1c8 !important;
+                min-height: 2.35rem;
+            }
+            .stTabs [aria-selected="true"] {
+                background: #24201c !important;
+                color: #2dd4bf !important;
+            }
+            [data-testid="stMetric"],
+            [data-testid="stMetric"] > div {
+                background: #1c1a18 !important;
+                border: 1px solid #3b352f !important;
                 border-radius: 8px;
                 padding: 0.75rem 0.85rem;
+            }
+            [data-testid="stMetric"] * {
+                color: #f4f1ea !important;
+            }
+            [data-testid="stMetricLabel"] * {
+                color: #b9b1a6 !important;
+            }
+            .stButton button {
+                min-height: 2.35rem;
+                border-radius: 8px;
+                border: 1px solid #4a423a !important;
+                background: #24201c !important;
+                color: #f4f1ea !important;
+                font-weight: 650;
+            }
+            .stButton button:hover {
+                border-color: #2dd4bf !important;
+                color: #ccfbf1 !important;
+                background: #26352f !important;
             }
             .stDownloadButton button {
                 min-height: 2.75rem;
                 border-radius: 8px;
-                border: 1px solid #0f766e;
-                background: #0f766e;
-                color: #ffffff;
+                border: 1px solid #2dd4bf !important;
+                background: #0f766e !important;
+                color: #f7fffd !important;
                 font-weight: 700;
             }
+            .stDownloadButton button:hover {
+                border-color: #5eead4 !important;
+                background: #115e59 !important;
+                color: #ffffff !important;
+            }
             .stDownloadButton button:disabled {
-                border-color: #d0d5dd;
-                background: #eaecf0;
-                color: #667085;
+                border-color: #3b352f !important;
+                background: #1c1a18 !important;
+                color: #746d66 !important;
+            }
+            div[data-testid="stDataFrame"] {
+                border: 1px solid #3b352f !important;
+                border-radius: 8px;
+                overflow: hidden;
+            }
+            [data-testid="stVerticalBlock"],
+            [data-testid="stHorizontalBlock"] {
+                background: transparent !important;
+            }
+            iframe {
+                background: #11100f !important;
+                border-radius: 8px;
             }
         </style>
         """,

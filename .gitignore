@@ -3,7 +3,9 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
-.streamlit/
+.streamlit/*
+!.streamlit/
+!.streamlit/config.toml
 .tmp/
 exports/
 instruction.md
